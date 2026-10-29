@@ -1,0 +1,20 @@
+{
+  "domain": "hamlet_geyser",
+  "name": "Hamlet Geyser",
+  "codeowners": [
+    "@wesselswynand2-prog"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "http",
+    "frontend",
+    "panel_custom",
+    "websocket_api"
+  ],
+  "documentation": "https://github.com/wesselswynand2-prog/hamlet-geyser",
+  "integration_type": "device",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/wesselswynand2-prog/hamlet-geyser/issues",
+  "requirements": [],
+  "version": "1.3.0"
+}

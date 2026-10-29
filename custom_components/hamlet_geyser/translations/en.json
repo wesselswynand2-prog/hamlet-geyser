@@ -1,0 +1,167 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Geyser",
+        "description": "Pick the relay that switches the geyser element (e.g. Shelly Pro 1PM, or the Geyserwise switch). Power and temperature are optional but make the control much smarter.",
+        "data": {
+          "name": "Name",
+          "geyser_switch": "Geyser switch / relay",
+          "geyser_power": "Geyser power (W)",
+          "geyser_temp": "Geyser water temperature"
+        }
+      },
+      "energy": {
+        "title": "Solar, battery and grid",
+        "description": "Victron: solar = MPPT PV power (+ PV inverter if fitted), load = AC consumption L1/L2/L3, grid = grid L1/L2/L3. Sunsynk/Deye: use the PV power, load power, battery and grid sensors from Solar Assistant or Solarman. If load is left empty it is calculated from solar + grid − battery.",
+        "data": {
+          "preset": "Inverter type",
+          "solar_power": "Solar production (W) – pick all PV sensors",
+          "load_power": "House load (W) – pick all phases",
+          "battery_soc": "Battery state of charge (%)",
+          "battery_power": "Battery power (W)",
+          "grid_power": "Grid power (W)",
+          "grid_status": "Grid available (binary sensor, or grid voltage sensor)"
+        }
+      },
+      "signs": {
+        "title": "Sign conventions",
+        "description": "The app needs battery power positive while CHARGING and grid power positive while IMPORTING. Defaults are set for your inverter type; check the live values on the Geyser page under Installer and flip these if they look backwards.",
+        "data": {
+          "battery_invert": "Battery sensor is positive when discharging (invert)",
+          "grid_invert": "Grid sensor is positive when exporting (invert)"
+        }
+      },
+      "collector": {
+        "title": "Solar collector (optional)",
+        "description": "For a solar geyser with a collector panel and circulation pump. Choose Geyserwise if the Geyserwise controller runs the pump (the app monitors it and lets the element wait while the sun heats). Choose separate Shelly if the app should run the pump itself with a Shelly relay, using collector vs tank temperature.",
+        "data": {
+          "collector_mode": "Collector / pump",
+          "collector_temp": "Collector (panel) temperature",
+          "pump_entity": "Pump – Shelly switch, or Geyserwise pump status",
+          "tank_bottom_temp": "Tank bottom temperature (optional, better for pump control)"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This geyser switch is already set up."
+    },
+    "error": {
+      "collector_temp_required": "A collector temperature sensor is needed.",
+      "pump_required": "Pick the Shelly relay that switches the pump.",
+      "pump_must_be_switch": "The pump must be a switch the app can turn on and off."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Geyser",
+        "data": {
+          "name": "Name",
+          "geyser_switch": "Geyser switch / relay",
+          "geyser_power": "Geyser power (W)",
+          "geyser_temp": "Geyser water temperature"
+        }
+      },
+      "energy": {
+        "title": "Solar, battery and grid",
+        "data": {
+          "preset": "Inverter type",
+          "solar_power": "Solar production (W)",
+          "load_power": "House load (W)",
+          "battery_soc": "Battery state of charge (%)",
+          "battery_power": "Battery power (W)",
+          "grid_power": "Grid power (W)",
+          "grid_status": "Grid available"
+        }
+      },
+      "signs": {
+        "title": "Sign conventions",
+        "data": {
+          "battery_invert": "Battery sensor is positive when discharging (invert)",
+          "grid_invert": "Grid sensor is positive when exporting (invert)"
+        }
+      },
+      "collector": {
+        "title": "Solar collector (optional)",
+        "description": "For a solar geyser with a collector panel and circulation pump. Choose Geyserwise if the Geyserwise controller runs the pump (the app monitors it and lets the element wait while the sun heats). Choose separate Shelly if the app should run the pump itself with a Shelly relay, using collector vs tank temperature.",
+        "data": {
+          "collector_mode": "Collector / pump",
+          "collector_temp": "Collector (panel) temperature",
+          "pump_entity": "Pump – Shelly switch, or Geyserwise pump status",
+          "tank_bottom_temp": "Tank bottom temperature (optional, better for pump control)"
+        }
+      }
+    },
+    "error": {
+      "collector_temp_required": "A collector temperature sensor is needed.",
+      "pump_required": "Pick the Shelly relay that switches the pump.",
+      "pump_must_be_switch": "The pump must be a switch the app can turn on and off."
+    }
+  },
+  "selector": {
+    "preset": {
+      "options": {
+        "victron": "Victron (GX / Modbus)",
+        "sunsynk": "Sunsynk / Deye",
+        "other": "Other"
+      }
+    },
+    "collector_mode": {
+      "options": {
+        "none": "No collector",
+        "geyserwise": "Geyserwise controls the pump",
+        "shelly": "Separate Shelly relay runs the pump"
+      }
+    }
+  },
+  "entity": {
+    "select": {
+      "mode": {
+        "name": "Mode",
+        "state": {
+          "auto": "Auto",
+          "boost": "Boost",
+          "on": "On",
+          "off": "Off"
+        }
+      },
+      "pump_mode": {
+        "name": "Pump mode",
+        "state": {
+          "auto": "Auto",
+          "on": "On",
+          "off": "Off"
+        }
+      }
+    },
+    "button": {
+      "boost": {
+        "name": "Boost"
+      }
+    },
+    "sensor": {
+      "status": {
+        "name": "Status"
+      },
+      "surplus": {
+        "name": "Spare solar"
+      },
+      "energy_solar": {
+        "name": "Solar today"
+      },
+      "energy_load": {
+        "name": "House load today"
+      },
+      "energy_geyser": {
+        "name": "Geyser today"
+      },
+      "energy_geyser_solar": {
+        "name": "Geyser from solar today"
+      },
+      "collector_status": {
+        "name": "Collector"
+      }
+    }
+  }
+}
