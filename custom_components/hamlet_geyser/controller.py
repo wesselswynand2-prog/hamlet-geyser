@@ -15,6 +15,7 @@ from homeassistant.util import dt as dt_util
 
 from . import logic
 from .const import (
+    CONF_ELEMENT_STATUS,
     CONF_BATTERY_INVERT,
     CONF_BATTERY_POWER,
     CONF_BATTERY_SOC,
@@ -96,10 +97,22 @@ class GeyserController:
     def name(self) -> str:
         return self.conf.get(CONF_NAME, "Geyser")
 
+    def element_heating(self) -> bool | None:
+        """Element status from the controller: on / heating / true / a number above 0 = heating."""
+        eid = self.conf.get(CONF_ELEMENT_STATUS)
+        st = self.hass.states.get(eid) if eid else None
+        if st is None or st.state in ("unavailable", "unknown", ""):
+            return None
+        raw = str(st.state).strip().lower()
+        try:
+            return float(raw) > 0
+        except ValueError:
+            return raw in {"on", "true", "heating", "heat", "yes", "active", "running", "element on", "burning"}
+
     def _watched_entities(self) -> list[str]:
         c = self.conf
         ids: list[str] = []
-        for key in (CONF_GEYSER_SWITCH, CONF_GEYSER_POWER, CONF_GEYSER_TEMP, CONF_BATTERY_SOC, CONF_BATTERY_POWER, CONF_GRID_POWER, CONF_GRID_STATUS,
+        for key in (CONF_GEYSER_SWITCH, CONF_GEYSER_POWER, CONF_GEYSER_TEMP, CONF_ELEMENT_STATUS, CONF_BATTERY_SOC, CONF_BATTERY_POWER, CONF_GRID_POWER, CONF_GRID_STATUS,
                     CONF_COLLECTOR_TEMP, CONF_PUMP_ENTITY, CONF_TANK_BOTTOM_TEMP):
             ids += _as_list(c.get(key))
         ids += _as_list(c.get(CONF_SOLAR_POWER)) + _as_list(c.get(CONF_LOAD_POWER))
@@ -271,7 +284,11 @@ class GeyserController:
             load_w = max(solar_w + (grid_w or 0) - (battery_w or 0), 0)
 
         geyser_w = self._sum(c.get(CONF_GEYSER_POWER))
-        if geyser_w is None and is_on is not None:
+        heating = self.element_heating()
+        if geyser_w is None and heating is not None:
+            # No meter, but the controller (Geyserwise) says when the element really heats
+            geyser_w = float(self.settings["geyser_rated_w"]) if (heating and is_on is not False) else 0.0
+        elif geyser_w is None and is_on is not None:
             # No meter on the geyser: assume rated power while the relay is on
             geyser_w = float(self.settings["geyser_rated_w"]) if is_on else 0.0
 

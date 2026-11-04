@@ -79,7 +79,9 @@ class GeyserPowerSensor(GeyserEntity, SensorEntity):
         from .const import CONF_GEYSER_POWER  # noqa: PLC0415
         c = {**self.controller.entry.data, **self.controller.entry.options}
         metered = bool(c.get(CONF_GEYSER_POWER))
+        heating = None if metered else self.controller.element_heating()
         return {"estimated": not metered,
+                "estimated_from": None if metered else ("element status" if heating is not None else "switch"),
                 "rated_w": None if metered else self.controller.settings.get("geyser_rated_w")}
 
 

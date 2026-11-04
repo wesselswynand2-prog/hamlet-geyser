@@ -1,6 +1,6 @@
 """Constants for Hamlet Geyser."""
 DOMAIN = "hamlet_geyser"
-VERSION = "1.4.0"
+VERSION = "1.4.1"
 
 PANEL_URL_PATH = "hamlet-geyser"
 PANEL_COMPONENT = "hamlet-geyser-panel"
@@ -11,6 +11,7 @@ CONF_PRESET = "preset"
 CONF_GEYSER_SWITCH = "geyser_switch"
 CONF_GEYSER_POWER = "geyser_power"
 CONF_GEYSER_TEMP = "geyser_temp"
+CONF_ELEMENT_STATUS = "element_status"   # Geyserwise "element on" indicator (optional)
 CONF_SOLAR_POWER = "solar_power"
 CONF_LOAD_POWER = "load_power"
 CONF_BATTERY_SOC = "battery_soc"

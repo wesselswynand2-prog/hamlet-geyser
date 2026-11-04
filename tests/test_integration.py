@@ -287,3 +287,35 @@ async def test_geyser_power_estimated_without_meter(hass: HomeAssistant):
     hass.states.async_set("switch.geyser", "off")
     await hass.async_block_till_done()
     assert float(hass.states.get("sensor.main_geyser_geyser_power").state) == 0
+
+
+async def test_geyser_power_from_element_status(hass: HomeAssistant):
+    """Geyserwise reports when the element really heats: count the rating only then."""
+    async_mock_service(hass, "homeassistant", "turn_on")
+    async_mock_service(hass, "homeassistant", "turn_off")
+    entry = await _setup(hass)
+    hass.states.async_set("binary_sensor.geyserwise_element", "off")
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {
+        "name": "Main geyser", "geyser_switch": "switch.geyser", "element_status": "binary_sensor.geyserwise_element"})
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"preset": "victron", "solar_power": ["sensor.pv1"]})
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"collector_mode": "none"})
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"battery_invert": False, "grid_invert": False})
+    await hass.async_block_till_done()
+    controller = hass.data[DOMAIN][entry.entry_id]
+    rated = controller.settings["geyser_rated_w"]
+    hass.states.async_set("switch.geyser", "on")                    # switched on, but the thermostat has cut it
+    await hass.async_block_till_done()
+    st = hass.states.get("sensor.main_geyser_geyser_power")
+    assert float(st.state) == 0 and st.attributes["estimated_from"] == "element status"
+    hass.states.async_set("binary_sensor.geyserwise_element", "on")  # element heating
+    await hass.async_block_till_done()
+    assert float(hass.states.get("sensor.main_geyser_geyser_power").state) == rated
+    for raw, want in (("Heating", rated), ("idle", 0), ("1", rated), ("0", 0)):
+        hass.states.async_set("binary_sensor.geyserwise_element", raw)
+        await hass.async_block_till_done()
+        assert float(hass.states.get("sensor.main_geyser_geyser_power").state) == want, raw
+    hass.states.async_set("binary_sensor.geyserwise_element", "unavailable")   # falls back to the switch
+    await hass.async_block_till_done()
+    st = hass.states.get("sensor.main_geyser_geyser_power")
+    assert float(st.state) == rated and st.attributes["estimated_from"] == "switch"

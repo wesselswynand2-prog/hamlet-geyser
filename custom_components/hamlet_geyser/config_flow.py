@@ -21,6 +21,7 @@ from .const import (
     CONF_PUMP_ENTITY,
     CONF_TANK_BOTTOM_TEMP,
     CONF_GEYSER_POWER,
+    CONF_ELEMENT_STATUS,
     CONF_GEYSER_SWITCH,
     CONF_GEYSER_TEMP,
     CONF_GRID_INVERT,
@@ -36,7 +37,7 @@ from .const import (
 )
 
 ENTITY_KEYS = [
-    CONF_GEYSER_SWITCH, CONF_GEYSER_POWER, CONF_GEYSER_TEMP, CONF_SOLAR_POWER, CONF_LOAD_POWER,
+    CONF_GEYSER_SWITCH, CONF_GEYSER_POWER, CONF_GEYSER_TEMP, CONF_ELEMENT_STATUS, CONF_SOLAR_POWER, CONF_LOAD_POWER,
     CONF_BATTERY_SOC, CONF_BATTERY_POWER, CONF_GRID_POWER, CONF_GRID_STATUS,
 ]
 
@@ -55,6 +56,9 @@ def _geyser_schema() -> vol.Schema:
         ),
         vol.Optional(CONF_GEYSER_POWER): _sensor("power"),
         vol.Optional(CONF_GEYSER_TEMP): _sensor("temperature"),
+        vol.Optional(CONF_ELEMENT_STATUS): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["binary_sensor", "sensor", "switch", "input_boolean"])
+        ),
     })
 
 
@@ -168,7 +172,7 @@ class HamletGeyserOptionsFlow(OptionsFlow):
 
     async def async_step_init(self, user_input: dict | None = None) -> ConfigFlowResult:
         if user_input is not None:
-            self._data.update({k: None for k in (CONF_GEYSER_POWER, CONF_GEYSER_TEMP)})
+            self._data.update({k: None for k in (CONF_GEYSER_POWER, CONF_GEYSER_TEMP, CONF_ELEMENT_STATUS)})
             self._data.update(user_input)
             return await self.async_step_energy()
         schema = self.add_suggested_values_to_schema(_geyser_schema(), self._current)

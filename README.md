@@ -44,7 +44,7 @@ Then: **Settings → Devices & services → Add integration → Hamlet Geyser** 
 | Grid available | AC-in voltage (L1), or the Grid lost alarm (0 = grid OK; alarm sensors are detected by name) | Grid voltage or grid-connected sensor |
 
 Leave *House load* empty if there's no sensor — it's calculated as solar + grid − battery.
-No geyser meter? Power is estimated from the element rating while the relay is on.
+No geyser meter? Power is estimated from the element rating while the relay is on – or, better, while the controller says the element is heating: map **Element heating status** (e.g. the Geyserwise "Element" on/off entity) and the thermostat cut-outs are left out.
 No temperature probe? Everything works; heating just runs for the full time window.
 
 **Check signs after setup:** open the Geyser page → Installer settings → *Live sensor check*. Battery must be positive while charging, grid positive while importing. If not, Devices & services → Hamlet Geyser → Configure → flip the sign options.
