@@ -161,6 +161,9 @@
       },
       "collector_status": {
         "name": "Collector"
+      },
+      "geyser_power": {
+        "name": "Geyser power"
       }
     }
   }

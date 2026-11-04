@@ -100,7 +100,7 @@ The card shows the temperature gauge, status and reason, Auto / Boost / On / Off
 
 ## Entities (per geyser)
 
-`select.<name>_mode`, `button.<name>_boost`, `sensor.<name>_status` (reason in attributes), `sensor.<name>_spare_solar`, and daily kWh sensors: solar, house load, geyser, geyser from solar. With a collector: `sensor.<name>_collector` (temperature, pump state in attributes), and with the Shelly option `select.<name>_pump_mode`.
+`select.<name>_mode`, `button.<name>_boost`, `sensor.<name>_status` (reason in attributes), `sensor.<name>_spare_solar`, `sensor.<name>_geyser_power` (W – the meter, or the element rating while switched on when there is no meter, e.g. Geyserwise), and daily kWh sensors: solar, house load, geyser, geyser from solar. With a collector: `sensor.<name>_collector` (temperature, pump state in attributes), and with the Shelly option `select.<name>_pump_mode`.
 
 ## Tests
 

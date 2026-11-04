@@ -15,6 +15,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     async_add_entities(extra + [
         GeyserStatusSensor(c),
         GeyserSurplusSensor(c),
+        GeyserPowerSensor(c),
         GeyserEnergySensor(c, "solar"),
         GeyserEnergySensor(c, "load"),
         GeyserEnergySensor(c, "geyser"),
@@ -54,6 +55,32 @@ class GeyserSurplusSensor(GeyserEntity, SensorEntity):
     def native_value(self):
         value = self.controller.live.get("surplus_w")
         return None if value is None else round(value)
+
+
+class GeyserPowerSensor(GeyserEntity, SensorEntity):
+    """What the geyser draws: the meter when there is one, else the element rating while it's switched on
+    (Geyserwise / relay without power metering). Lets Hamlet Home and the Energy dashboard count it."""
+
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = UnitOfPower.WATT
+    _attr_icon = "mdi:water-boiler"
+
+    def __init__(self, controller):
+        super().__init__(controller, "geyser_power")
+
+    @property
+    def native_value(self):
+        value = self.controller.live.get("geyser_w")
+        return None if value is None else round(max(value, 0))
+
+    @property
+    def extra_state_attributes(self):
+        from .const import CONF_GEYSER_POWER  # noqa: PLC0415
+        c = {**self.controller.entry.data, **self.controller.entry.options}
+        metered = bool(c.get(CONF_GEYSER_POWER))
+        return {"estimated": not metered,
+                "rated_w": None if metered else self.controller.settings.get("geyser_rated_w")}
 
 
 class GeyserEnergySensor(GeyserEntity, SensorEntity):

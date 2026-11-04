@@ -263,3 +263,27 @@ async def test_card_file_is_served(hass: HomeAssistant, hass_client):
         assert "customElements.define" in body
     await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
+
+
+async def test_geyser_power_estimated_without_meter(hass: HomeAssistant):
+    """Geyserwise / relay without a meter: Geyser power = element rating while it's switched on."""
+    async_mock_service(hass, "homeassistant", "turn_on")
+    async_mock_service(hass, "homeassistant", "turn_off")
+    entry = await _setup(hass)
+    st = hass.states.get("sensor.main_geyser_geyser_power")
+    assert st is not None and st.attributes["estimated"] is False        # metered here
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"name": "Main geyser", "geyser_switch": "switch.geyser"})
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"preset": "victron", "solar_power": ["sensor.pv1"]})
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"collector_mode": "none"})
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"battery_invert": False, "grid_invert": False})
+    await hass.async_block_till_done()
+    hass.states.async_set("switch.geyser", "on")
+    await hass.async_block_till_done()
+    controller = hass.data[DOMAIN][entry.entry_id]
+    st = hass.states.get("sensor.main_geyser_geyser_power")
+    assert st.attributes["estimated"] is True
+    assert float(st.state) == controller.settings["geyser_rated_w"]
+    hass.states.async_set("switch.geyser", "off")
+    await hass.async_block_till_done()
+    assert float(hass.states.get("sensor.main_geyser_geyser_power").state) == 0
