@@ -12,6 +12,10 @@ function fmtW(w) {
   return a >= 1000 ? `${(w / 1000).toFixed(a >= 10000 ? 0 : 1)} kW` : `${Math.round(w)} W`;
 }
 const fmtKwh = (v) => (num(v) === null ? "–" : `${Number(v).toFixed(1)} kWh`);
+// water colour by temperature: 20°C blue -> 42°C amber -> 65°C red
+const WSTOPS = [[20, [58, 143, 224]], [42, [242, 163, 58]], [65, [227, 69, 44]]];
+const waterColor = (v) => { v = Math.max(20, Math.min(65, v)); const i = v < 42 ? 0 : 1; const [a, ca] = WSTOPS[i], [b, cb] = WSTOPS[i + 1], f = (v - a) / (b - a);
+  return `rgb(${ca.map((c, j) => Math.round(c + (cb[j] - c) * f)).join(",")})`; };
 const hhmm = (mins) => `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
 
 const STYLE = `
@@ -165,12 +169,26 @@ details summary { cursor: pointer; font-size: 14px; color: var(--muted); padding
 @keyframes rise { 0% { opacity: 0; transform: translateY(6px); } 25% { opacity: 1; } 100% { opacity: 0; transform: translateY(-28px); } }
 .tank.heating .elem { filter: drop-shadow(0 0 3px var(--heat)); animation: glow 1.4s ease-in-out infinite alternate; }
 @keyframes glow { to { opacity: .55; } }
+/* collector diagram */
+.cdia { grid-column: span 2; min-width: 0; max-width: 460px; width: 100%; }
+@media (max-width: 520px) { .cdia { grid-column: 1 / -1; } }
+.cdia svg { display: block; width: 100%; height: auto; overflow: visible; }
+.cpipe { fill: none; stroke: var(--line); stroke-width: 7; stroke-linecap: round; stroke-linejoin: round; }
+.cwet { fill: none; stroke-width: 7; stroke-linecap: round; stroke-linejoin: round; opacity: 0; }
+.cdots { fill: none; stroke-width: 3.5; stroke-linecap: round; stroke-dasharray: 1 11; opacity: 0; filter: brightness(.85); }
+.cdia .on .cwet { opacity: .3; } .cdia .on .cdots { opacity: 1; animation: cdots 1s linear infinite; }
+@keyframes cdots { to { stroke-dashoffset: -24; } }
+.cdia .imp { transform-box: fill-box; transform-origin: center; } .cdia .spin .imp { animation: cspin .8s linear infinite; }
+@keyframes cspin { to { transform: rotate(360deg); } }
+.cdia .sun { opacity: .25; } .cdia .sun.lit { opacity: 1; } .cdia .sun.lit .rays { transform-box: fill-box; transform-origin: center; animation: cspin 12s linear infinite; }
+.cdia .cv { font-size: 18px; text-anchor: middle; fill: var(--primary-text-color); font-variant-numeric: tabular-nums; font-weight: 500; }
+.cdia .cl { font-size: 11px; text-anchor: middle; fill: var(--muted); } .cdia .cl.on { fill: var(--primary-text-color); font-weight: 500; }
 /* collector loop: water dots moving through a pipe */
 .loop .flow { height: 8px; border-radius: 4px; }
 .loop .flow.on { background: color-mix(in srgb, var(--c-solar) 30%, transparent); }
 .loop .flow.on::after { left: 0; width: 100%; background: radial-gradient(circle, var(--c-solar) 2.2px, transparent 2.6px) 0 50% / 14px 8px repeat-x; animation: dots .9s linear infinite; border-radius: 4px; }
 @keyframes dots { from { background-position: 0 50%; } to { background-position: 14px 50%; } }
-@media (prefers-reduced-motion: reduce) { .loop .flow.on::after, .badge.pulse .dot, .tank .shim, .tank .elem { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .loop .flow.on::after, .badge.pulse .dot, .tank .shim, .tank .elem, .cdia .on .cdots, .cdia .spin .imp, .cdia .sun.lit .rays { animation: none; } }
 .pmodes { display: flex; gap: 6px; flex-wrap: wrap; }
 .loading { padding: 64px; text-align: center; color: var(--muted); }
 `;
@@ -392,10 +410,7 @@ class HamletGeyserPanel extends HTMLElement {
   // A little geyser tank: the water colour follows the temperature (blue = cold, red = hot, hottest at the top);
   // while heating the element glows and heat rises through the water (amber on solar, red on grid/battery).
   _tank(temp, on, source, offline) {
-    // 20°C blue -> 42°C amber -> 65°C red
-    const stops = [[20, [58, 143, 224]], [42, [242, 163, 58]], [65, [227, 69, 44]]];
-    const col = (v) => { v = Math.max(20, Math.min(65, v)); const i = v < 42 ? 0 : 1; const [a, ca] = stops[i], [b, cb] = stops[i + 1], f = (v - a) / (b - a);
-      return `rgb(${ca.map((c, j) => Math.round(c + (cb[j] - c) * f)).join(",")})`; };
+    const col = waterColor;
     const t = temp === null ? (on ? 55 : 40) : temp;
     const top = offline ? "rgb(140,140,140)" : col(t), bottom = offline ? "rgb(115,115,115)" : col(t - 14);
     const heat = source === "solar" || source === "collector" ? "var(--c-solar)" : "#ff5a36";
@@ -645,6 +660,37 @@ class HamletGeyserPanel extends HTMLElement {
   }
 
   /* ----------------------------------------------------------- collector */
+  // Roof panel -> hot pipe -> geyser (top), geyser (bottom) -> pump -> cold pipe -> panel. Dots flow while the pump runs.
+  _collectorDiagram(col, tank, on, isBottom, status) {
+    const hot = col === null ? "var(--c-solar)" : waterColor(col), cold = "rgb(58,143,224)";   // return water from the bottom of the tank
+    const tTop = tank === null ? "rgb(150,150,150)" : waterColor(tank + 6), tBot = tank === null ? "rgb(120,120,120)" : waterColor(tank - 6);
+    const sun = col !== null && col >= 35;
+    const warn = status === "Overheat";
+    const hotPath = "M148 50 H 236 V 58 H 262", coldPath = "M262 126 H 112";
+    return `<div class="cdia" aria-label="Collector ${col === null ? "unknown" : Math.round(col) + " degrees"}, tank ${tank === null ? "unknown" : Math.round(tank) + " degrees"}, pump ${on ? "running" : "off"}">
+      <svg viewBox="0 0 340 172">
+        <defs><linearGradient id="ctg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${tTop}"/><stop offset="1" stop-color="${tBot}"/></linearGradient></defs>
+        <g class="sun ${sun ? "lit" : ""}"><circle cx="34" cy="22" r="9" fill="var(--c-solar)"/>
+          <g class="rays" stroke="var(--c-solar)" stroke-width="2.2" stroke-linecap="round">${[0, 45, 90, 135, 180, 225, 270, 315].map((d) => { const r = d * Math.PI / 180; return `<line x1="${(34 + 13 * Math.cos(r)).toFixed(1)}" y1="${(22 + 13 * Math.sin(r)).toFixed(1)}" x2="${(34 + 18 * Math.cos(r)).toFixed(1)}" y2="${(22 + 18 * Math.sin(r)).toFixed(1)}"/>`; }).join("")}</g></g>
+        <path class="cpipe" d="${hotPath}"/><path class="cpipe" d="${coldPath}"/>
+        <g class="${on ? "on" : ""}"><path class="cwet" d="${hotPath}" style="stroke:${hot}"/><path class="cdots" d="${hotPath}" style="stroke:${hot}"/>
+          <path class="cwet" d="${coldPath}" style="stroke:${cold}"/><path class="cdots" d="${coldPath}" style="stroke:${cold}"/></g>
+        <polygon points="26,130 66,42 152,42 112,130" fill="color-mix(in srgb, ${hot} ${sun ? 30 : 12}%, var(--card))" stroke="${warn ? "var(--c-warn)" : "var(--primary-text-color)"}" stroke-opacity="${warn ? 1 : 0.4}" stroke-width="2.5" stroke-linejoin="round"/>
+        ${[1, 2, 3, 4].map((i) => `<line x1="${26 + i * 17.2}" y1="130" x2="${66 + i * 17.2}" y2="42" stroke="var(--primary-text-color)" stroke-opacity=".2" stroke-width="1.5"/>`).join("")}
+        <g class="${on ? "spin" : ""}"><circle cx="190" cy="126" r="13" fill="var(--card)" stroke="${on ? cold : "var(--line)"}" stroke-width="2.5"/>
+          <g class="imp"><path d="M190 126 l0 -8 a8 8 0 0 1 6 2.4 Z M190 126 l6.9 4 a8 8 0 0 1 -2.8 5.4 Z M190 126 l-6.9 4 a8 8 0 0 1 -3 -5.4 Z" fill="${on ? cold : "var(--muted)"}"/></g></g>
+        <rect x="262" y="28" width="50" height="112" rx="22" fill="url(#ctg)" opacity=".9"/>
+        <rect x="262" y="28" width="50" height="112" rx="22" fill="none" stroke="var(--primary-text-color)" stroke-opacity=".35" stroke-width="2.5"/>
+        <rect x="269" y="40" width="5" height="60" rx="2.5" fill="#fff" opacity=".22"/>
+        <text class="cv" x="89" y="${col === null ? 92 : 94}">${col === null ? "–" : Math.round(col) + "°"}</text>
+        <text class="cv" x="287" y="90" fill="#fff">${tank === null ? "–" : Math.round(tank) + "°"}</text>
+        <text class="cl" x="89" y="152">Collector</text><text class="cl" x="287" y="160">${isBottom ? "Tank bottom" : "Geyser"}</text>
+        <text class="cl ${on ? "on" : ""}" x="190" y="154">${on ? "Pump on" : "Pump off"}</text>
+        <text class="cl" x="205" y="42">hot</text><text class="cl" x="230" y="118">cold</text>
+      </svg></div>`;
+  }
+
+
   _renderCollector() {
     const card = this.shadowRoot.getElementById("collcard"); if (!card) return;
     const s = this._snap; const mode = s.features.collector;
@@ -659,11 +705,7 @@ class HamletGeyserPanel extends HTMLElement {
     const color = p.status === "Overheat" || p.status === "Offline" || p.status === "No sensor" ? "var(--c-warn)" : p.frost ? "var(--c-load)" : p.on ? "var(--c-solar)" : "var(--muted)";
     const el = this.shadowRoot.getElementById("coll");
     this._setHTML(el, `<div class="coll">
-      <div class="loop" aria-label="Collector ${col === null ? "unknown" : Math.round(col) + " degrees"}, tank ${tank === null ? "unknown" : Math.round(tank) + " degrees"}">
-        <div class="node"><div class="muted small">Collector</div><div class="val">${col === null ? "–" : col.toFixed(0) + "°C"}</div></div>
-        <div class="flow ${p.on ? "on" : ""}" title="${p.on ? "Pump running" : "Pump off"}"></div>
-        <div class="node"><div class="muted small">${num(L.tank_bottom_temp) !== null ? "Tank bottom" : "Tank"}</div><div class="val">${tank === null ? "–" : tank.toFixed(0) + "°C"}</div></div>
-      </div>
+      ${this._collectorDiagram(col, tank, !!p.on, num(L.tank_bottom_temp) !== null, p.status)}
       <div><div class="muted small">Difference</div><div style="font-size:22px;font-variant-numeric:tabular-nums">${dt === null ? "–" : (dt > 0 ? "+" : "") + dt.toFixed(0) + "°C"}</div>
         ${shelly ? `<div class="muted small">starts at +${s.settings.pump_dt_on}°C</div>` : ""}</div>
       <div><span class="badge ${p.on ? "pulse" : ""}" style="--bc:${color}"><span class="dot"></span>Pump · ${esc(p.status || "–")}</span>
