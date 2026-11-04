@@ -159,7 +159,18 @@ details summary { cursor: pointer; font-size: 14px; color: var(--muted); padding
 .loop .flow.on { background: color-mix(in srgb, var(--c-solar) 35%, transparent); }
 .loop .flow.on::after { content: ""; position: absolute; top: 0; left: -30%; width: 30%; height: 100%; background: var(--c-solar); border-radius: 2px; animation: flow 1.4s linear infinite; }
 @keyframes flow { to { left: 100%; } }
-@media (prefers-reduced-motion: reduce) { .loop .flow.on::after, .badge.pulse .dot { animation: none; } }
+.gauge .center svg.tank { display: block; overflow: visible; width: 54px; height: 83px; }
+.tank .shim { opacity: 0; }
+.tank.heating .shim { animation: rise 2.2s ease-in infinite; } .tank.heating .s2 { animation-delay: .7s; } .tank.heating .s3 { animation-delay: 1.4s; }
+@keyframes rise { 0% { opacity: 0; transform: translateY(6px); } 25% { opacity: 1; } 100% { opacity: 0; transform: translateY(-28px); } }
+.tank.heating .elem { filter: drop-shadow(0 0 3px var(--heat)); animation: glow 1.4s ease-in-out infinite alternate; }
+@keyframes glow { to { opacity: .55; } }
+/* collector loop: water dots moving through a pipe */
+.loop .flow { height: 8px; border-radius: 4px; }
+.loop .flow.on { background: color-mix(in srgb, var(--c-solar) 30%, transparent); }
+.loop .flow.on::after { left: 0; width: 100%; background: radial-gradient(circle, var(--c-solar) 2.2px, transparent 2.6px) 0 50% / 14px 8px repeat-x; animation: dots .9s linear infinite; border-radius: 4px; }
+@keyframes dots { from { background-position: 0 50%; } to { background-position: 14px 50%; } }
+@media (prefers-reduced-motion: reduce) { .loop .flow.on::after, .badge.pulse .dot, .tank .shim, .tank .elem { animation: none; } }
 .pmodes { display: flex; gap: 6px; flex-wrap: wrap; }
 .loading { padding: 64px; text-align: center; color: var(--muted); }
 `;
@@ -378,6 +389,30 @@ class HamletGeyserPanel extends HTMLElement {
     return "var(--muted)";
   }
 
+  // A little geyser tank: the water colour follows the temperature (blue = cold, red = hot, hottest at the top);
+  // while heating the element glows and heat rises through the water (amber on solar, red on grid/battery).
+  _tank(temp, on, source, offline) {
+    // 20°C blue -> 42°C amber -> 65°C red
+    const stops = [[20, [58, 143, 224]], [42, [242, 163, 58]], [65, [227, 69, 44]]];
+    const col = (v) => { v = Math.max(20, Math.min(65, v)); const i = v < 42 ? 0 : 1; const [a, ca] = stops[i], [b, cb] = stops[i + 1], f = (v - a) / (b - a);
+      return `rgb(${ca.map((c, j) => Math.round(c + (cb[j] - c) * f)).join(",")})`; };
+    const t = temp === null ? (on ? 55 : 40) : temp;
+    const top = offline ? "rgb(140,140,140)" : col(t), bottom = offline ? "rgb(115,115,115)" : col(t - 14);
+    const heat = source === "solar" || source === "collector" ? "var(--c-solar)" : "#ff5a36";
+    const k = on && !offline;
+    return `<svg class="tank ${k ? "heating" : ""}" viewBox="0 0 60 92" width="48" height="74" aria-hidden="true" style="--heat:${heat}">
+      <defs><linearGradient id="tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${top}"/><stop offset="1" stop-color="${bottom}"/></linearGradient>
+        <clipPath id="tclip"><rect x="8" y="8" width="44" height="76" rx="20"/></clipPath></defs>
+      <rect x="27" y="0" width="6" height="9" rx="2" fill="var(--line)"/>
+      <g clip-path="url(#tclip)"><rect x="8" y="8" width="44" height="76" fill="url(#tg)" opacity=".9"/>
+        <path class="shim s1" d="M18 80 q4 -6 0 -12 t0 -12 t0 -12 t0 -12" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="2" stroke-linecap="round"/>
+        <path class="shim s2" d="M30 82 q4 -6 0 -12 t0 -12 t0 -12 t0 -12" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="2" stroke-linecap="round"/>
+        <path class="shim s3" d="M42 80 q4 -6 0 -12 t0 -12 t0 -12 t0 -12" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="2" stroke-linecap="round"/>
+        <path class="elem" d="M15 74 h30 v4 h-30 v4 h30" fill="none" stroke="${k ? "var(--heat)" : "rgba(0,0,0,.35)"}" stroke-width="2.5" stroke-linejoin="round"/></g>
+      <rect x="8" y="8" width="44" height="76" rx="20" fill="none" stroke="var(--primary-text-color)" stroke-opacity=".35" stroke-width="2.5"/>
+      <rect x="14" y="16" width="5" height="40" rx="2.5" fill="#fff" opacity=".22"/></svg>`;
+  }
+
   _renderHero() {
     const s = this._snap; if (!s) return;
     const el = this.shadowRoot.getElementById("hero"); if (!el) return;
@@ -400,9 +435,10 @@ class HamletGeyserPanel extends HTMLElement {
     };
     const color = this._statusColor(d);
     const hasTemp = s.features.temp && temp !== null;
+    const tankSvg = this._tank(hasTemp ? temp : null, !!d.on, d.source, d.status === "Offline");
     const center = hasTemp
-      ? `<div class="big">${temp.toFixed(0)}<small>°C</small></div><div class="muted small">${target !== null && s.features.temp ? `target ${target.toFixed(0)}°C` : ""}</div>`
-      : `<ha-icon icon="mdi:water-boiler" style="--mdc-icon-size:48px;color:${color}"></ha-icon><div class="big" style="font-size:28px;margin-top:6px">${d.on ? fmtW(live.geyser_w) : "Off"}</div>`;
+      ? `${tankSvg}<div class="big" style="font-size:36px;margin-top:4px">${temp.toFixed(0)}<small>°C</small></div><div class="muted small">${target !== null && s.features.temp ? `target ${target.toFixed(0)}°C` : ""}</div>`
+      : `${tankSvg}<div class="big" style="font-size:26px;margin-top:6px">${d.on ? fmtW(live.geyser_w) : "Off"}</div>`;
     const gauge = `<div class="gauge"><svg viewBox="0 0 240 210" role="img" aria-label="${hasTemp ? `Water ${temp.toFixed(0)} degrees` : "Geyser"}">
         <path d="${arc(1)}" fill="none" stroke="var(--line)" stroke-width="14" stroke-linecap="round"/>
         ${hasTemp ? `<path d="${arc(frac(temp))}" fill="none" stroke="${color === "var(--muted)" ? "var(--accent)" : color}" stroke-width="14" stroke-linecap="round"/>` : `<path d="${arc(d.on ? 1 : 0.001)}" fill="none" stroke="${color}" stroke-width="14" stroke-linecap="round" opacity="${d.on ? 1 : 0}"/>`}
