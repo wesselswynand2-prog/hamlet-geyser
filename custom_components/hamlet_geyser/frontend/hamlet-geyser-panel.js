@@ -16,6 +16,38 @@ const fmtKwh = (v) => (num(v) === null ? "–" : `${Number(v).toFixed(1)} kWh`);
 const WSTOPS = [[20, [58, 143, 224]], [42, [242, 163, 58]], [65, [227, 69, 44]]];
 const waterColor = (v) => { v = Math.max(20, Math.min(65, v)); const i = v < 42 ? 0 : 1; const [a, ca] = WSTOPS[i], [b, cb] = WSTOPS[i + 1], f = (v - a) / (b - a);
   return `rgb(${ca.map((c, j) => Math.round(c + (cb[j] - c) * f)).join(",")})`; };
+// Where the geyser element's power comes from right now. The house is fed by solar, battery and grid together,
+// so the element gets the same mix (solar / battery discharge / grid import, in proportion).
+const feedMix = (L, on) => {
+  const gw = on ? Math.max(num(L.geyser_w) || 0, 0) : 0;
+  const s = Math.max(num(L.solar_w) || 0, 0), b = Math.max(-(num(L.battery_w) || 0), 0);
+  const g = L.grid_available === false ? 0 : Math.max(num(L.grid_w) || 0, 0);
+  const tot = s + b + g;
+  const share = tot > 0 ? [s / tot, b / tot, g / tot] : [0, 0, 1];
+  return { gw, w: share.map((x) => x * gw), share, hasBatt: L.battery_w !== null && L.battery_w !== undefined, hasGrid: L.grid_w !== null && L.grid_w !== undefined };
+};
+// svg for the three sources (sun, battery, pylon) wired to the element at (ex, ey); sources stacked at x = sx
+const feedSvg = (L, on, ex, ey, sx, ys) => {
+  const m = feedMix(L, on);
+  const src = [["Solar", "var(--c-solar)", ys[0], true], ["Battery", "var(--c-batt)", ys[1], m.hasBatt], ["Grid", "var(--c-gridp)", ys[2], m.hasGrid]];
+  const r10 = (w) => (w >= 1000 ? `${(w / 1000).toFixed(1)} kW` : `${Math.round(w / 10) * 10} W`);
+  let out = "";
+  src.forEach(([name, c, y, show], i) => {
+    if (!show) return;
+    const w = m.w[i], live = on && m.gw > 0 && m.share[i] >= 0.03;
+    const d = `M${sx - 16} ${y} C ${(sx + ex) / 2} ${y}, ${(sx + ex) / 2 + 10} ${ey}, ${ex} ${ey}`;
+    out += `<path class="fwire" d="${d}"/><g class="${live ? "on" : ""}"><path class="fglow" d="${d}" style="stroke:${c};stroke-width:${(3 + m.share[i] * 5).toFixed(1)}"/><path class="fdots" d="${d}" style="stroke:${c}"/></g>`;
+    const icon = i === 0
+      ? `<circle cx="${sx}" cy="${y}" r="5" fill="${c}"/>${[0, 60, 120, 180, 240, 300].map((a) => { const r = a * Math.PI / 180; return `<line x1="${(sx + 8 * Math.cos(r)).toFixed(1)}" y1="${(y + 8 * Math.sin(r)).toFixed(1)}" x2="${(sx + 11 * Math.cos(r)).toFixed(1)}" y2="${(y + 11 * Math.sin(r)).toFixed(1)}" stroke="${c}" stroke-width="2" stroke-linecap="round"/>`; }).join("")}`
+      : i === 1 ? `<rect x="${sx - 6}" y="${y - 9}" width="12" height="18" rx="2.5" fill="none" stroke="${c}" stroke-width="2"/><rect x="${sx - 2.5}" y="${y - 12}" width="5" height="3" rx="1" fill="${c}"/><rect x="${sx - 3.5}" y="${y - 1}" width="7" height="7" rx="1" fill="${c}"/>`
+      : `<path d="M${sx - 7} ${y + 10} L ${sx} ${y - 10} L ${sx + 7} ${y + 10} M${sx - 4.5} ${y + 3} H ${sx + 4.5} M${sx - 6} ${y - 4} H ${sx + 6}" fill="none" stroke="${c}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    out += `<circle cx="${sx}" cy="${y}" r="16" fill="var(--card)" stroke="${live ? c : "var(--line)"}" stroke-width="2"/>${icon}
+      <text class="cl ${live ? "on" : ""}" x="${sx + 24}" y="${y - 2}" style="text-anchor:start">${name}</text>
+      <text class="cl" x="${sx + 24}" y="${y + 12}" style="text-anchor:start">${live ? r10(w) : i === 2 && L.grid_available === false ? "down" : "–"}</text>`;
+  });
+  return out;
+};
+const elementSvg = (x, y, on) => `<path class="elm ${on ? "on" : ""}" d="M${x} ${y} h-22 v4 h22 v4 h-22" fill="none" stroke-width="2.5" stroke-linejoin="round"/>`;
 const hhmm = (mins) => `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
 
 const STYLE = `
@@ -170,7 +202,7 @@ details summary { cursor: pointer; font-size: 14px; color: var(--muted); padding
 .tank.heating .elem { filter: drop-shadow(0 0 3px var(--heat)); animation: glow 1.4s ease-in-out infinite alternate; }
 @keyframes glow { to { opacity: .55; } }
 /* collector diagram */
-.cdia { grid-column: span 2; min-width: 0; max-width: 460px; width: 100%; }
+.cdia { grid-column: span 2; min-width: 0; max-width: 620px; width: 100%; }
 @media (max-width: 520px) { .cdia { grid-column: 1 / -1; } }
 .cdia svg { display: block; width: 100%; height: auto; overflow: visible; }
 .cpipe { fill: none; stroke: var(--line); stroke-width: 7; stroke-linecap: round; stroke-linejoin: round; }
@@ -183,12 +215,19 @@ details summary { cursor: pointer; font-size: 14px; color: var(--muted); padding
 .cdia .sun { opacity: .25; } .cdia .sun.lit { opacity: 1; } .cdia .sun.lit .rays { transform-box: fill-box; transform-origin: center; animation: cspin 12s linear infinite; }
 .cdia .cv { font-size: 18px; text-anchor: middle; fill: var(--primary-text-color); font-variant-numeric: tabular-nums; font-weight: 500; }
 .cdia .cl { font-size: 11px; text-anchor: middle; fill: var(--muted); } .cdia .cl.on { fill: var(--primary-text-color); font-weight: 500; }
+.cdia { --c-batt: #1baf7a; --c-gridp: #c2417e; }
+:host([dark]) .cdia { --c-batt: #199e70; --c-gridp: #d55181; }
+.cdia.feed { max-width: 420px; }
+.fwire { fill: none; stroke: var(--line); stroke-width: 3; stroke-linecap: round; }
+.fglow { fill: none; stroke-linecap: round; opacity: 0; } .fdots { fill: none; stroke-width: 3; stroke-linecap: round; stroke-dasharray: 1 9; opacity: 0; }
+.cdia .on .fglow { opacity: .28; } .cdia .on .fdots { opacity: 1; animation: cdots .8s linear infinite; }
+.elm { stroke: rgba(0,0,0,.35); } .elm.on { stroke: #ff5a36; filter: drop-shadow(0 0 3px #ff5a36); animation: glow 1.4s ease-in-out infinite alternate; }
 /* collector loop: water dots moving through a pipe */
 .loop .flow { height: 8px; border-radius: 4px; }
 .loop .flow.on { background: color-mix(in srgb, var(--c-solar) 30%, transparent); }
 .loop .flow.on::after { left: 0; width: 100%; background: radial-gradient(circle, var(--c-solar) 2.2px, transparent 2.6px) 0 50% / 14px 8px repeat-x; animation: dots .9s linear infinite; border-radius: 4px; }
 @keyframes dots { from { background-position: 0 50%; } to { background-position: 14px 50%; } }
-@media (prefers-reduced-motion: reduce) { .loop .flow.on::after, .badge.pulse .dot, .tank .shim, .tank .elem, .cdia .on .cdots, .cdia .spin .imp, .cdia .sun.lit .rays { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .loop .flow.on::after, .badge.pulse .dot, .tank .shim, .tank .elem, .elm.on, .cdia .on .fdots, .cdia .on .cdots, .cdia .spin .imp, .cdia .sun.lit .rays { animation: none; } }
 .pmodes { display: flex; gap: 6px; flex-wrap: wrap; }
 .loading { padding: 64px; text-align: center; color: var(--muted); }
 `;
@@ -525,9 +564,30 @@ class HamletGeyserPanel extends HTMLElement {
     this._setHTML(el, `<div class="tiles">${tiles.map((t) => `
       <div class="tile" style="--ic:${t.ic}"><div class="lab"><ha-icon icon="${t.icon}"></ha-icon>${t.lab}</div>
       <div class="val">${t.val}</div>${t.soc !== undefined && t.soc !== null ? `<div class="socbar"><i style="width:${t.soc}%;background:${t.soc < s.settings.min_soc ? "var(--c-warn)" : "var(--c-ok)"}"></i></div>` : ""}
-      <div class="note">${esc(t.note)}</div></div>`).join("")}</div>${this._balanceHtml(L)}`);
+      <div class="note">${esc(t.note)}</div></div>`).join("")}</div>${this._balanceHtml(L)}${this._feedOnly(L)}`);
     const sub = this.shadowRoot.getElementById("nowsub");
     if (sub) sub.textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
+  // geyser + where its power comes from, for geysers without a solar collector (with one, the collector picture shows it)
+  _feedOnly(L) {
+    const s = this._snap, mode = s.features.collector;
+    if (mode && mode !== "none") return "";
+    const d = s.decision || {}, on = !!d.on, t = num(L.temp);
+    const tTop = t === null ? (on ? waterColor(55) : "rgb(150,150,150)") : waterColor(t + 6), tBot = t === null ? (on ? waterColor(45) : "rgb(120,120,120)") : waterColor(t - 6);
+    const m = feedMix(L, on);
+    return `<div class="cdia feed" aria-label="Geyser element ${on ? "heating" : "off"}${on ? `, power from ${["solar", "battery", "grid"].filter((_, i) => m.share[i] >= 0.03).join(" and ")}` : ""}">
+      <div class="small" style="margin:14px 0 4px">Where the geyser's power comes from</div>
+      <svg viewBox="0 0 300 150">
+        <defs><linearGradient id="ftg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${tTop}"/><stop offset="1" stop-color="${tBot}"/></linearGradient></defs>
+        ${feedSvg(L, on, 90, 108, 200, [28, 75, 122])}
+        <rect x="40" y="14" width="50" height="112" rx="22" fill="url(#ftg)" opacity=".9"/>
+        <rect x="40" y="14" width="50" height="112" rx="22" fill="none" stroke="var(--primary-text-color)" stroke-opacity=".35" stroke-width="2.5"/>
+        <rect x="47" y="26" width="5" height="60" rx="2.5" fill="#fff" opacity=".22"/>
+        ${elementSvg(82, 104, on)}
+        <text class="cv" x="65" y="76" fill="#fff">${t === null ? "" : Math.round(t) + "°"}</text>
+        <text class="cl ${on ? "on" : ""}" x="65" y="144">${on ? `Element on · ${fmtW(m.gw)}` : "Element off"}</text>
+      </svg></div>`;
   }
 
   _balanceHtml(L) {
@@ -661,14 +721,15 @@ class HamletGeyserPanel extends HTMLElement {
 
   /* ----------------------------------------------------------- collector */
   // Roof panel -> hot pipe -> geyser (top), geyser (bottom) -> pump -> cold pipe -> panel. Dots flow while the pump runs.
-  _collectorDiagram(col, tank, on, isBottom, status) {
+  _collectorDiagram(col, tank, on, isBottom, status, L = {}, heating = false) {
     const hot = col === null ? "var(--c-solar)" : waterColor(col), cold = "rgb(58,143,224)";   // return water from the bottom of the tank
     const tTop = tank === null ? "rgb(150,150,150)" : waterColor(tank + 6), tBot = tank === null ? "rgb(120,120,120)" : waterColor(tank - 6);
     const sun = col !== null && col >= 35;
     const warn = status === "Overheat";
     const hotPath = "M148 50 H 236 V 58 H 262", coldPath = "M262 126 H 112";
-    return `<div class="cdia" aria-label="Collector ${col === null ? "unknown" : Math.round(col) + " degrees"}, tank ${tank === null ? "unknown" : Math.round(tank) + " degrees"}, pump ${on ? "running" : "off"}">
-      <svg viewBox="0 0 340 172">
+    const m = feedMix(L, heating);
+    return `<div class="cdia" aria-label="Element ${heating ? "heating" : "off"}${heating ? `, power from ${["solar", "battery", "grid"].filter((_, i) => m.share[i] >= 0.03).join(" and ")}` : ""}. Collector ${col === null ? "unknown" : Math.round(col) + " degrees"}, tank ${tank === null ? "unknown" : Math.round(tank) + " degrees"}, pump ${on ? "running" : "off"}">
+      <svg viewBox="0 0 470 172">
         <defs><linearGradient id="ctg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${tTop}"/><stop offset="1" stop-color="${tBot}"/></linearGradient></defs>
         <g class="sun ${sun ? "lit" : ""}"><circle cx="34" cy="22" r="9" fill="var(--c-solar)"/>
           <g class="rays" stroke="var(--c-solar)" stroke-width="2.2" stroke-linecap="round">${[0, 45, 90, 135, 180, 225, 270, 315].map((d) => { const r = d * Math.PI / 180; return `<line x1="${(34 + 13 * Math.cos(r)).toFixed(1)}" y1="${(22 + 13 * Math.sin(r)).toFixed(1)}" x2="${(34 + 18 * Math.cos(r)).toFixed(1)}" y2="${(22 + 18 * Math.sin(r)).toFixed(1)}"/>`; }).join("")}</g></g>
@@ -682,6 +743,8 @@ class HamletGeyserPanel extends HTMLElement {
         <rect x="262" y="28" width="50" height="112" rx="22" fill="url(#ctg)" opacity=".9"/>
         <rect x="262" y="28" width="50" height="112" rx="22" fill="none" stroke="var(--primary-text-color)" stroke-opacity=".35" stroke-width="2.5"/>
         <rect x="269" y="40" width="5" height="60" rx="2.5" fill="#fff" opacity=".22"/>
+        ${feedSvg(L, heating, 312, 126, 380, [40, 90, 140])}
+        ${elementSvg(304, 122, heating)}
         <text class="cv" x="89" y="${col === null ? 92 : 94}">${col === null ? "–" : Math.round(col) + "°"}</text>
         <text class="cv" x="287" y="90" fill="#fff">${tank === null ? "–" : Math.round(tank) + "°"}</text>
         <text class="cl" x="89" y="152">Collector</text><text class="cl" x="287" y="160">${isBottom ? "Tank bottom" : "Geyser"}</text>
@@ -705,7 +768,7 @@ class HamletGeyserPanel extends HTMLElement {
     const color = p.status === "Overheat" || p.status === "Offline" || p.status === "No sensor" ? "var(--c-warn)" : p.frost ? "var(--c-load)" : p.on ? "var(--c-solar)" : "var(--muted)";
     const el = this.shadowRoot.getElementById("coll");
     this._setHTML(el, `<div class="coll">
-      ${this._collectorDiagram(col, tank, !!p.on, num(L.tank_bottom_temp) !== null, p.status)}
+      ${this._collectorDiagram(col, tank, !!p.on, num(L.tank_bottom_temp) !== null, p.status, L, !!(s.decision || {}).on)}
       <div><div class="muted small">Difference</div><div style="font-size:22px;font-variant-numeric:tabular-nums">${dt === null ? "–" : (dt > 0 ? "+" : "") + dt.toFixed(0) + "°C"}</div>
         ${shelly ? `<div class="muted small">starts at +${s.settings.pump_dt_on}°C</div>` : ""}</div>
       <div><span class="badge ${p.on ? "pulse" : ""}" style="--bc:${color}"><span class="dot"></span>Pump · ${esc(p.status || "–")}</span>
