@@ -35,15 +35,41 @@ const feedSvg = (L, on, ex, ey, sx, ys) => {
   src.forEach(([name, c, y, show], i) => {
     if (!show) return;
     const w = m.w[i], live = on && m.gw > 0 && m.share[i] >= 0.03;
-    const d = `M${sx - 16} ${y} C ${(sx + ex) / 2} ${y}, ${(sx + ex) / 2 + 10} ${ey}, ${ex} ${ey}`;
+    const d = `M${sx - [21, 11, 11][i]} ${y} C ${(sx + ex) / 2} ${y}, ${(sx + ex) / 2 + 10} ${ey}, ${ex} ${ey}`;
     out += `<path class="fwire" d="${d}"/><g class="${live ? "on" : ""}"><path class="fglow" d="${d}" style="stroke:${c};stroke-width:${(3 + m.share[i] * 5).toFixed(1)}"/><path class="fdots" d="${d}" style="stroke:${c}"/></g>`;
-    const icon = i === 0
-      ? `<circle cx="${sx}" cy="${y}" r="5" fill="${c}"/>${[0, 60, 120, 180, 240, 300].map((a) => { const r = a * Math.PI / 180; return `<line x1="${(sx + 8 * Math.cos(r)).toFixed(1)}" y1="${(y + 8 * Math.sin(r)).toFixed(1)}" x2="${(sx + 11 * Math.cos(r)).toFixed(1)}" y2="${(y + 11 * Math.sin(r)).toFixed(1)}" stroke="${c}" stroke-width="2" stroke-linecap="round"/>`; }).join("")}`
-      : i === 1 ? `<rect x="${sx - 6}" y="${y - 9}" width="12" height="18" rx="2.5" fill="none" stroke="${c}" stroke-width="2"/><rect x="${sx - 2.5}" y="${y - 12}" width="5" height="3" rx="1" fill="${c}"/><rect x="${sx - 3.5}" y="${y - 1}" width="7" height="7" rx="1" fill="${c}"/>`
-      : `<path d="M${sx - 7} ${y + 10} L ${sx} ${y - 10} L ${sx + 7} ${y + 10} M${sx - 4.5} ${y + 3} H ${sx + 4.5} M${sx - 6} ${y - 4} H ${sx + 6}" fill="none" stroke="${c}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
-    out += `<circle cx="${sx}" cy="${y}" r="16" fill="var(--card)" stroke="${live ? c : "var(--line)"}" stroke-width="2"/>${icon}
-      <text class="cl ${live ? "on" : ""}" x="${sx + 24}" y="${y - 2}" style="text-anchor:start">${name}</text>
-      <text class="cl" x="${sx + 24}" y="${y + 12}" style="text-anchor:start">${live ? r10(w) : i === 2 && L.grid_available === false ? "down" : "–"}</text>`;
+    let icon;
+    if (i === 0) {
+      // a real PV panel: silver frame, dark blue cells, tilted
+      const px = sx - 19, py = y - 13, k = 7;     // k = tilt offset
+      const cells = [];
+      for (let c = 1; c < 4; c++) cells.push(`<line x1="${px + c * 9 - (k * 0) }" y1="${py + 26}" x2="${px + c * 9 + k}" y2="${py}" />`);
+      cells.push(`<line x1="${px + k / 2}" y1="${py + 13}" x2="${px + 36 + k / 2}" y2="${py + 13}"/>`);
+      icon = `<g class="pv ${live ? "live" : ""}"><polygon points="${px},${py + 26} ${px + k},${py} ${px + 36 + k},${py} ${px + 36},${py + 26}" fill="#1d3a6b" stroke="#c9ced6" stroke-width="2" stroke-linejoin="round"/>
+        <g stroke="#7f9cc9" stroke-width=".9" opacity=".8">${cells.join("")}</g>
+        <polygon class="shine" points="${px + 6},${py + 26} ${px + 10 + k},${py} ${px + 16 + k},${py} ${px + 12},${py + 26}" fill="#fff" opacity=".18"/>
+        <line x1="${px + 18}" y1="${py + 26}" x2="${px + 18}" y2="${py + 31}" stroke="#9aa1ab" stroke-width="2"/></g>`;
+    } else if (i === 1) {
+      // a real battery: body, terminal, charge level from the state of charge
+      const soc = num(L.battery_soc), lvl = soc === null ? 0.6 : Math.max(0.05, Math.min(1, soc / 100));
+      const fill = soc !== null && soc < 20 ? "#e34948" : soc !== null && soc < 40 ? "#eda100" : c;
+      const bx = sx - 10, by = y - 15, bh = 30, fh = (bh - 4) * lvl;
+      icon = `<g class="bat ${live ? "live" : ""}"><rect x="${sx - 4}" y="${by - 3}" width="8" height="4" rx="1" fill="#9aa1ab"/>
+        <rect x="${bx}" y="${by}" width="20" height="${bh}" rx="3.5" fill="var(--card)" stroke="#9aa1ab" stroke-width="2"/>
+        <rect class="lvl" x="${bx + 2.5}" y="${by + 2 + (bh - 4 - fh)}" width="15" height="${fh}" rx="1.5" fill="${fill}"/>
+        <rect x="${bx + 3.5}" y="${by + 3}" width="3" height="${bh - 6}" rx="1.5" fill="#fff" opacity=".25"/>
+        ${soc === null ? "" : `<text x="${sx}" y="${by + bh + 11}" text-anchor="middle" style="font-size:9px;fill:var(--muted)">${Math.round(soc)}%</text>`}</g>`;
+    } else {
+      // a lattice pylon
+      const t = y - 16, bt = y + 16;
+      icon = `<g fill="none" stroke="${live ? c : "#9aa1ab"}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round">
+        <path d="M${sx - 9} ${bt} L ${sx - 2} ${t} L ${sx + 2} ${t} L ${sx + 9} ${bt}"/>
+        <path d="M${sx - 12} ${t + 6} H ${sx + 12} M${sx - 9} ${t + 12} H ${sx + 9}"/>
+        <path d="M${sx - 5} ${t + 12} L ${sx + 7} ${bt} M${sx + 5} ${t + 12} L ${sx - 7} ${bt} M${sx - 3} ${t + 6} L ${sx + 4} ${t + 12} M${sx + 3} ${t + 6} L ${sx - 4} ${t + 12}"/>
+        <circle cx="${sx - 12}" cy="${t + 7.5}" r="1.3" fill="${live ? c : "#9aa1ab"}"/><circle cx="${sx + 12}" cy="${t + 7.5}" r="1.3" fill="${live ? c : "#9aa1ab"}"/></g>`;
+    }
+    out += icon + `
+      <text class="cl ${live ? "on" : ""}" x="${sx + 31}" y="${y - 2}" style="text-anchor:start">${name}</text>
+      <text class="cl" x="${sx + 31}" y="${y + 12}" style="text-anchor:start">${live ? r10(w) : i === 2 && L.grid_available === false ? "down" : "–"}</text>`;
   });
   return out;
 };
@@ -221,13 +247,16 @@ details summary { cursor: pointer; font-size: 14px; color: var(--muted); padding
 .fwire { fill: none; stroke: var(--line); stroke-width: 3; stroke-linecap: round; }
 .fglow { fill: none; stroke-linecap: round; opacity: 0; } .fdots { fill: none; stroke-width: 3; stroke-linecap: round; stroke-dasharray: 1 9; opacity: 0; }
 .cdia .on .fglow { opacity: .28; } .cdia .on .fdots { opacity: 1; animation: cdots .8s linear infinite; }
+.pv .shine { transform-box: fill-box; } .pv.live .shine { animation: shine 3s ease-in-out infinite; }
+@keyframes shine { 0% { transform: translateX(-4px); opacity: 0; } 30% { opacity: .3; } 70% { opacity: .3; } 100% { transform: translateX(22px); opacity: 0; } }
+.bat.live .lvl { animation: glow 1.2s ease-in-out infinite alternate; }
 .elm { stroke: rgba(0,0,0,.35); } .elm.on { stroke: #ff5a36; filter: drop-shadow(0 0 3px #ff5a36); animation: glow 1.4s ease-in-out infinite alternate; }
 /* collector loop: water dots moving through a pipe */
 .loop .flow { height: 8px; border-radius: 4px; }
 .loop .flow.on { background: color-mix(in srgb, var(--c-solar) 30%, transparent); }
 .loop .flow.on::after { left: 0; width: 100%; background: radial-gradient(circle, var(--c-solar) 2.2px, transparent 2.6px) 0 50% / 14px 8px repeat-x; animation: dots .9s linear infinite; border-radius: 4px; }
 @keyframes dots { from { background-position: 0 50%; } to { background-position: 14px 50%; } }
-@media (prefers-reduced-motion: reduce) { .loop .flow.on::after, .badge.pulse .dot, .tank .shim, .tank .elem, .elm.on, .cdia .on .fdots, .cdia .on .cdots, .cdia .spin .imp, .cdia .sun.lit .rays { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .loop .flow.on::after, .badge.pulse .dot, .tank .shim, .tank .elem, .elm.on, .pv.live .shine, .bat.live .lvl, .cdia .on .fdots, .cdia .on .cdots, .cdia .spin .imp, .cdia .sun.lit .rays { animation: none; } }
 .pmodes { display: flex; gap: 6px; flex-wrap: wrap; }
 .loading { padding: 64px; text-align: center; color: var(--muted); }
 `;
@@ -578,7 +607,7 @@ class HamletGeyserPanel extends HTMLElement {
     const m = feedMix(L, on);
     return `<div class="cdia feed" aria-label="Geyser element ${on ? "heating" : "off"}${on ? `, power from ${["solar", "battery", "grid"].filter((_, i) => m.share[i] >= 0.03).join(" and ")}` : ""}">
       <div class="small" style="margin:14px 0 4px">Where the geyser's power comes from</div>
-      <svg viewBox="0 0 300 150">
+      <svg viewBox="0 0 310 150">
         <defs><linearGradient id="ftg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${tTop}"/><stop offset="1" stop-color="${tBot}"/></linearGradient></defs>
         ${feedSvg(L, on, 90, 108, 200, [28, 75, 122])}
         <rect x="40" y="14" width="50" height="112" rx="22" fill="url(#ftg)" opacity=".9"/>
@@ -729,7 +758,7 @@ class HamletGeyserPanel extends HTMLElement {
     const hotPath = "M148 50 H 236 V 58 H 262", coldPath = "M262 126 H 112";
     const m = feedMix(L, heating);
     return `<div class="cdia" aria-label="Element ${heating ? "heating" : "off"}${heating ? `, power from ${["solar", "battery", "grid"].filter((_, i) => m.share[i] >= 0.03).join(" and ")}` : ""}. Collector ${col === null ? "unknown" : Math.round(col) + " degrees"}, tank ${tank === null ? "unknown" : Math.round(tank) + " degrees"}, pump ${on ? "running" : "off"}">
-      <svg viewBox="0 0 470 172">
+      <svg viewBox="0 0 485 172">
         <defs><linearGradient id="ctg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${tTop}"/><stop offset="1" stop-color="${tBot}"/></linearGradient></defs>
         <g class="sun ${sun ? "lit" : ""}"><circle cx="34" cy="22" r="9" fill="var(--c-solar)"/>
           <g class="rays" stroke="var(--c-solar)" stroke-width="2.2" stroke-linecap="round">${[0, 45, 90, 135, 180, 225, 270, 315].map((d) => { const r = d * Math.PI / 180; return `<line x1="${(34 + 13 * Math.cos(r)).toFixed(1)}" y1="${(22 + 13 * Math.sin(r)).toFixed(1)}" x2="${(34 + 18 * Math.cos(r)).toFixed(1)}" y2="${(22 + 18 * Math.sin(r)).toFixed(1)}"/>`; }).join("")}</g></g>
