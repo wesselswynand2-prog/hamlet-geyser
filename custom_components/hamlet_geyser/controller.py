@@ -1,6 +1,7 @@
 """Runtime controller: reads sensors, decides, switches the geyser, keeps history."""
 from __future__ import annotations
 
+import dataclasses
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Callable
@@ -74,6 +75,11 @@ class GeyserController:
         self._unsubs: list[CALLBACK_TYPE] = []
         self._listeners: list[Callable[[], None]] = []
         self._last_command: datetime | None = None
+        # the switch not following our command (e.g. a controller that turns its own boost switch back off)
+        self._want: bool | None = None
+        self._want_since: datetime | None = None
+        self._last_try: datetime | None = None
+        self._cmd_error: str | None = None
         # spare-solar go-ahead from Hamlet Home (None = decide on our own surplus)
         self.solar_grant: bool | None = None
         self.solar_grant_why: str = ""
@@ -380,10 +386,31 @@ class GeyserController:
                 self.boost_until = None
                 self._save()
             if self.decision.on != inp.is_on:
-                service = "turn_on" if self.decision.on else "turn_off"
-                _LOGGER.debug("%s: %s (%s)", self.name, service, self.decision.reason)
-                self._last_command = inp.now
-                await self.hass.services.async_call("homeassistant", service, {"entity_id": switch_id}, blocking=False)
+                if self._want != self.decision.on:
+                    self._want, self._want_since, self._last_try, self._cmd_error = self.decision.on, inp.now, None, None
+                stuck = (inp.now - self._want_since).total_seconds() if self._want_since else 0
+                # retry at most every 2 minutes once it's clearly not following, so we don't fight the controller
+                if self._last_try is None or stuck < 60 or (inp.now - self._last_try).total_seconds() >= 120:
+                    service = "turn_on" if self.decision.on else "turn_off"
+                    _LOGGER.debug("%s: %s (%s)", self.name, service, self.decision.reason)
+                    self._last_command = self._last_try = inp.now
+                    try:
+                        await self.hass.services.async_call("homeassistant", service, {"entity_id": switch_id}, blocking=True)
+                    except Exception as err:  # noqa: BLE001 - show it to the user instead of failing silently
+                        self._cmd_error = str(err) or type(err).__name__
+                        _LOGGER.warning("%s: could not %s %s: %s", self.name, service, switch_id, self._cmd_error)
+            elif not self.decision.held or self._want is None or self._want == inp.is_on:
+                # (anti-chatter "holds" the switch's current state – that alone doesn't mean it followed us)
+                self._want = self._want_since = self._last_try = self._cmd_error = None
+            if self._want is not None and self._want != inp.is_on:
+                stuck = (inp.now - self._want_since).total_seconds() if self._want_since else 0
+                if self._cmd_error or stuck >= 60:
+                    word = "on" if self._want else "off"
+                    why = (f"Home Assistant could not switch {switch_id}: {self._cmd_error}." if self._cmd_error else
+                           f"Asked {switch_id} to switch {word}, but it stays {'off' if self._want else 'on'}. "
+                           "Something else is overriding it – check the controller's own app/settings (mode, holiday, "
+                           "timers or its own set temperature) and that the switch can be switched by hand in Home Assistant.")
+                    self.decision = dataclasses.replace(self.decision, on=self._want, status="Not responding", reason=f"{self.decision.reason}. {why}")
 
         self.live = {
             "temp": inp.temp,

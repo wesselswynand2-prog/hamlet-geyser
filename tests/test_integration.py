@@ -319,3 +319,27 @@ async def test_geyser_power_from_element_status(hass: HomeAssistant):
     await hass.async_block_till_done()
     st = hass.states.get("sensor.main_geyser_geyser_power")
     assert float(st.state) == rated and st.attributes["estimated_from"] == "switch"
+
+
+async def test_switch_not_following(hass: HomeAssistant):
+    """A controller that keeps its own boost switch off: say so instead of looking stuck."""
+    from datetime import timedelta
+    calls_on = async_mock_service(hass, "homeassistant", "turn_on")   # mocked: the switch never actually turns on
+    async_mock_service(hass, "homeassistant", "turn_off")
+    entry = await _setup(hass)
+    ctl = hass.data[DOMAIN][entry.entry_id]
+    assert ctl.decision.on and ctl.decision.status == "Solar" and calls_on
+    # pretend the first command went out 90 s ago (moving the clock would change the solar decision)
+    ctl._want_since = ctl._last_try = ctl._want_since - timedelta(seconds=90)
+    n = len(calls_on)
+    await ctl.async_evaluate()
+    assert ctl.decision.status == "Not responding"
+    assert "switch.geyser" in ctl.decision.reason and "stays off" in ctl.decision.reason
+    assert len(calls_on) == n                # last try < 2 min ago: no retry yet
+    ctl._last_try -= timedelta(seconds=60)
+    await ctl.async_evaluate()
+    assert len(calls_on) <= n + 1            # never hammers the switch
+    hass.states.async_set("switch.geyser", "on")
+    await hass.async_block_till_done()
+    await ctl.async_evaluate()
+    assert ctl.decision.status == "Solar"

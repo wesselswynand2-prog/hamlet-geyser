@@ -466,7 +466,7 @@ class HamletGeyserPanel extends HTMLElement {
   /* ---------------------------------------------------------------- hero */
   _statusColor(d) {
     if (!d) return "var(--muted)";
-    if (d.status === "Blocked" || d.status === "Offline") return "var(--c-warn)";
+    if (d.status === "Blocked" || d.status === "Offline" || d.status === "Not responding") return "var(--c-warn)";
     if (d.status === "Hot") return "var(--c-bad)";
     if (d.source === "solar" || d.source === "collector") return "var(--c-solar)";
     if (d.source === "boost") return "var(--c-geyser)";
@@ -518,7 +518,7 @@ class HamletGeyserPanel extends HTMLElement {
     };
     const color = this._statusColor(d);
     const hasTemp = s.features.temp && temp !== null;
-    const tankSvg = this._tank(hasTemp ? temp : null, !!d.on, d.source, d.status === "Offline");
+    const tankSvg = this._tank(hasTemp ? temp : null, !!d.on && (s.live || {}).is_on !== false, d.source, d.status === "Offline");
     const center = hasTemp
       ? `${tankSvg}<div class="big" style="font-size:36px;margin-top:4px">${temp.toFixed(0)}<small>°C</small></div><div class="muted small">${target !== null && s.features.temp ? `target ${target.toFixed(0)}°C` : ""}</div>`
       : `${tankSvg}<div class="big" style="font-size:26px;margin-top:6px">${d.on ? fmtW(live.geyser_w) : "Off"}</div>`;
