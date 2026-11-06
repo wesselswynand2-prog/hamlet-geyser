@@ -343,3 +343,24 @@ async def test_switch_not_following(hass: HomeAssistant):
     await hass.async_block_till_done()
     await ctl.async_evaluate()
     assert ctl.decision.status == "Solar"
+
+
+async def test_controller_mode(hass: HomeAssistant, hass_ws_client):
+    """The Geyserwise / Geyserwala's own mode is shown and can be changed."""
+    async_mock_service(hass, "homeassistant", "turn_on")
+    async_mock_service(hass, "homeassistant", "turn_off")
+    hass.states.async_set("select.geyserwala_mode", "TIMER", {"options": ["SETPOINT", "TIMER", "SOLAR", "HOLIDAY", "STANDBY"]})
+    entry = await _setup(hass)
+    hass.config_entries.async_update_entry(entry, options={**entry.data, **entry.options, "controller_mode": "select.geyserwala_mode"})
+    await hass.async_block_till_done()
+    ctl = hass.data[DOMAIN][entry.entry_id]
+    picks = async_mock_service(hass, "select", "select_option")   # after setup: our own select platform loads the real one
+    await ctl.async_evaluate()
+    assert ctl.live["controller_mode"] == "TIMER" and "HOLIDAY" in ctl.live["controller_modes"]
+    ws = await hass_ws_client(hass)
+    await ws.send_json({"id": 1, "type": f"{DOMAIN}/set_controller_mode", "entry_id": entry.entry_id, "option": "HOLIDAY"})
+    res = await ws.receive_json()
+    assert res["success"], res
+    assert picks[-1].data == {"entity_id": "select.geyserwala_mode", "option": "HOLIDAY"}
+    await ws.send_json({"id": 2, "type": f"{DOMAIN}/set_controller_mode", "entry_id": entry.entry_id, "option": "PARTY"})
+    assert not (await ws.receive_json())["success"]

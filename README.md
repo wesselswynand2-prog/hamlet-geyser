@@ -45,6 +45,8 @@ Then: **Settings → Devices & services → Add integration → Hamlet Geyser** 
 
 Leave *House load* empty if there's no sensor — it's calculated as solar + grid − battery.
 No geyser meter? Power is estimated from the element rating while the relay is on – or, better, while the controller says the element is heating: map **Element heating status** (e.g. the Geyserwise "Element" on/off entity) and the thermostat cut-outs are left out.
+
+**Controller mode** (optional): map the Geyserwise / Geyserwala *Mode* select (Timer, Setpoint, Solar, Holiday, Standby …). The Geyser page then shows the controller's mode and lets you change it, and warns when a mode such as Holiday may block this app's switching or Boost.
 No temperature probe? Everything works; heating just runs for the full time window.
 
 **Check signs after setup:** open the Geyser page → Installer settings → *Live sensor check*. Battery must be positive while charging, grid positive while importing. If not, Devices & services → Hamlet Geyser → Configure → flip the sign options.

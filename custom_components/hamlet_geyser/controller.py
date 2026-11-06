@@ -17,6 +17,7 @@ from homeassistant.util import dt as dt_util
 from . import logic
 from .const import (
     CONF_ELEMENT_STATUS,
+    CONF_CONTROLLER_MODE,
     CONF_BATTERY_INVERT,
     CONF_BATTERY_POWER,
     CONF_BATTERY_SOC,
@@ -115,10 +116,29 @@ class GeyserController:
         except ValueError:
             return raw in {"on", "true", "heating", "heat", "yes", "active", "running", "element on", "burning"}
 
+    def controller_mode(self) -> tuple[str | None, list[str]]:
+        """The Geyserwise/Geyserwala's own mode and the modes it offers."""
+        eid = self.conf.get(CONF_CONTROLLER_MODE)
+        st = self.hass.states.get(eid) if eid else None
+        if st is None:
+            return None, []
+        opts = [str(o) for o in (st.attributes.get("options") or [])]
+        return (None if st.state in BAD_STATES else st.state), opts
+
+    async def async_set_controller_mode(self, option: str) -> None:
+        eid = self.conf.get(CONF_CONTROLLER_MODE)
+        if not eid:
+            raise ValueError("No controller mode is set up")
+        _, opts = self.controller_mode()
+        if opts and option not in opts:
+            raise ValueError(f"'{option}' is not one of {', '.join(opts)}")
+        domain = eid.split(".", 1)[0]
+        await self.hass.services.async_call(domain, "select_option", {"entity_id": eid, "option": option}, blocking=True)
+
     def _watched_entities(self) -> list[str]:
         c = self.conf
         ids: list[str] = []
-        for key in (CONF_GEYSER_SWITCH, CONF_GEYSER_POWER, CONF_GEYSER_TEMP, CONF_ELEMENT_STATUS, CONF_BATTERY_SOC, CONF_BATTERY_POWER, CONF_GRID_POWER, CONF_GRID_STATUS,
+        for key in (CONF_GEYSER_SWITCH, CONF_GEYSER_POWER, CONF_GEYSER_TEMP, CONF_ELEMENT_STATUS, CONF_CONTROLLER_MODE, CONF_BATTERY_SOC, CONF_BATTERY_POWER, CONF_GRID_POWER, CONF_GRID_STATUS,
                     CONF_COLLECTOR_TEMP, CONF_PUMP_ENTITY, CONF_TANK_BOTTOM_TEMP):
             ids += _as_list(c.get(key))
         ids += _as_list(c.get(CONF_SOLAR_POWER)) + _as_list(c.get(CONF_LOAD_POWER))
@@ -408,8 +428,9 @@ class GeyserController:
                     word = "on" if self._want else "off"
                     why = (f"Home Assistant could not switch {switch_id}: {self._cmd_error}." if self._cmd_error else
                            f"Asked {switch_id} to switch {word}, but it stays {'off' if self._want else 'on'}. "
-                           "Something else is overriding it – check the controller's own app/settings (mode, holiday, "
-                           "timers or its own set temperature) and that the switch can be switched by hand in Home Assistant.")
+                           + (f"The controller is in {cmode} mode, which may block it – change its mode below or in its own app. " if (cmode := self.controller_mode()[0]) else
+                              "Something else is overriding it – check the controller's own app/settings (mode, holiday, timers or its own set temperature). ")
+                           + "Also check the switch can be switched by hand in Home Assistant.")
                     self.decision = dataclasses.replace(self.decision, on=self._want, status="Not responding", reason=f"{self.decision.reason}. {why}")
 
         self.live = {
@@ -423,6 +444,8 @@ class GeyserController:
             "grid_available": inp.grid_available,
             "grid_status_raw": self._raw_state(self.conf.get(CONF_GRID_STATUS)),
             "is_on": inp.is_on,
+            "controller_mode": self.controller_mode()[0],
+            "controller_modes": self.controller_mode()[1],
             "surplus_w": self.decision.surplus_w,
             **self.live_pump,
         }

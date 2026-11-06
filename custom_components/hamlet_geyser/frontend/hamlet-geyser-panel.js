@@ -135,6 +135,13 @@ h2 .sub { margin-left: auto; font-size: 13px; font-weight: 400; color: var(--mut
 .modes button { font: inherit; font-size: 14px; padding: 10px 4px; border-radius: 10px; cursor: pointer;
   background: transparent; color: var(--primary-text-color); border: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .modes button ha-icon { --mdc-icon-size: 22px; }
+.ctrlmode { width: 100%; }
+.cmodes { display: flex; flex-wrap: wrap; gap: 6px; }
+.cmodes button { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 999px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid var(--line); background: transparent; color: var(--primary-text-color); }
+.cmodes button ha-icon { --mdc-icon-size: 16px; }
+.cmodes button[aria-pressed="true"] { background: var(--accent, #1e9be4); border-color: transparent; color: #fff; }
+.warntxt { color: var(--c-warn); }
 .modes button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--text-primary-color, #fff); }
 .modes button:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .boostbar { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
@@ -448,6 +455,7 @@ class HamletGeyserPanel extends HTMLElement {
     root.getElementById("heroctl").addEventListener("click", (ev) => {
       const m = ev.target.closest("[data-mode]"); if (m) return this._setMode(m.dataset.mode);
       const b = ev.target.closest("[data-boost]"); if (b) return this._setMode("boost", Number(b.dataset.boost));
+      const c = ev.target.closest("[data-cmode]"); if (c && c.getAttribute("aria-pressed") !== "true") return this._setCtrlMode(c.dataset.cmode);
     });
     root.getElementById("coll").addEventListener("click", async (ev) => {
       const b = ev.target.closest("[data-pump]"); if (!b) return;
@@ -546,7 +554,32 @@ class HamletGeyserPanel extends HTMLElement {
       </div>
       ${s.mode === "boost" ? `<div class="boostbar">${[30, 60, 120].map((m) => `<button class="chip" data-boost="${m}">${m < 60 ? m + " min" : m / 60 + " h"}</button>`).join("")}</div>` : ""}
       ${s.mode === "on" ? `<div class="muted small">Stays on until you switch back to Auto${s.features.temp ? ` (safety limit ${s.settings.max_temp}°C)` : ""}.</div>` : ""}
+      ${this._ctrlModeHtml(s.live || {})}
     `);
+  }
+
+  // the Geyserwise / Geyserwala's own mode (Timer, Holiday, On, Off …), shown and changeable here
+  _ctrlModeHtml(L) {
+    const opts = L.controller_modes || [];
+    if (!opts.length && !L.controller_mode) return "";
+    const cur = L.controller_mode;
+    const icon = (o) => { const k = String(o).toLowerCase();
+      return k.includes("holiday") || k.includes("away") ? "mdi:airplane" : k.includes("timer") || k.includes("schedule") ? "mdi:clock-outline"
+        : k.includes("solar") ? "mdi:white-balance-sunny" : k.includes("setpoint") || k.includes("thermo") ? "mdi:thermometer" : k === "off" || k.includes("off") ? "mdi:power-off" : k === "on" || k.includes("on") ? "mdi:power" : "mdi:cog-outline"; };
+    const nice = (o) => String(o).toLowerCase().replace(/_/g, " ").replace(/(^|\s)\S/g, (c) => c.toUpperCase());
+    const warn = cur && /holiday|away|standby|^off$/i.test(cur);
+    return `<div class="ctrlmode">
+      <div class="small" style="margin:12px 0 6px;display:flex;justify-content:space-between;gap:8px"><span>Geyserwise mode</span><span class="${warn ? "warntxt" : "muted"}">${cur ? nice(cur) : "unavailable"}</span></div>
+      <div class="cmodes" role="group" aria-label="Geyserwise mode">${opts.map((o) => `<button data-cmode="${esc(o)}" aria-pressed="${o === cur}" title="${esc(nice(o))}"><ha-icon icon="${icon(o)}"></ha-icon>${esc(nice(o))}</button>`).join("")}</div>
+      ${warn ? `<div class="small warntxt" style="margin-top:6px">In ${esc(nice(cur))} mode the Geyserwise may ignore this app's switching (and Boost).</div>` : ""}
+    </div>`;
+  }
+
+  async _setCtrlMode(option) {
+    if (!confirm(`Change the Geyserwise mode to ${option}?`)) return;
+    try {
+      this._apply(await this._hass.callWS({ type: `${DOMAIN}/set_controller_mode`, entry_id: this._entryId, option }));
+    } catch (e) { alert(e.message); }
   }
 
   async _setMode(mode, minutes) {

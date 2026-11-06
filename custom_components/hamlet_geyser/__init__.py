@@ -98,7 +98,7 @@ def _register_websocket(hass: HomeAssistant) -> None:
     if hass.data[DOMAIN].get("_ws"):
         return
     hass.data[DOMAIN]["_ws"] = True
-    for handler in (ws_list, ws_state, ws_subscribe, ws_set_mode, ws_set_pump_mode, ws_save_settings):
+    for handler in (ws_list, ws_state, ws_subscribe, ws_set_mode, ws_set_pump_mode, ws_save_settings, ws_set_controller_mode):
         websocket_api.async_register_command(hass, handler)
 
 
@@ -143,6 +143,24 @@ def ws_subscribe(hass, connection, msg):
 async def ws_set_mode(hass, connection, msg):
     if controller := _get(hass, connection, msg):
         await controller.async_set_mode(msg["mode"], msg.get("minutes"))
+        connection.send_result(msg["id"], controller.snapshot())
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/set_controller_mode",
+    vol.Required("entry_id"): str,
+    vol.Required("option"): str,
+})
+@websocket_api.async_response
+async def ws_set_controller_mode(hass, connection, msg):
+    """Change the Geyserwise/Geyserwala's own mode (Timer, Holiday, On, Off …)."""
+    if controller := _get(hass, connection, msg):
+        try:
+            await controller.async_set_controller_mode(msg["option"])
+        except Exception as err:  # noqa: BLE001
+            connection.send_error(msg["id"], "invalid", str(err))
+            return
+        await controller.async_evaluate()
         connection.send_result(msg["id"], controller.snapshot())
 
 
