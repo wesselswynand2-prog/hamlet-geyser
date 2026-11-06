@@ -400,6 +400,7 @@ class GeyserController:
                 f"Can't reach the geyser switch ({switch_id}). Check the Shelly has power and Wi-Fi"
                 + (" – if it's on non-essentials, this is normal while the grid is down." if inp.grid_available is False else "."))
         else:
+            inp.solar_blocked = self._solar_stop_rules(inp)
             self.decision = logic.decide(inp, self.settings)
             if self.decision.boost_expired and self.mode == "boost":
                 self.mode = "auto"
@@ -609,6 +610,34 @@ class GeyserController:
         return rows
 
     # ------------------------------------------------------- Hamlet Home link
+    def _solar_stop_rules(self, inp) -> str:
+        """Timed stops for solar heating (like the pool pump), when Hamlet Home isn't sharing the solar:
+        solar below the house load, or the battery giving more than the limit, for X minutes -> pause for as long."""
+        if inp.solar_grant is not None:
+            return ""   # Hamlet Home applies the same rules itself
+        t = self.__dict__.setdefault("_stop_t", {})
+        now, s = inp.now, self.settings
+        block = t.get("until")
+        if block is not None:
+            if now < block:
+                return f"{t.get('why', 'Solar heating paused')} – may start again in {max((block - now).total_seconds() / 60, 0):.0f} min"
+            t.clear()
+        on_solar = bool(inp.is_on) and self.decision is not None and self.decision.source == "solar"
+        deficit = inp.solar_w is not None and inp.load_w is not None and inp.solar_w < inp.load_w
+        lim = float(s.get("max_battery_discharge_w", 600))
+        discharging = inp.battery_w is not None and inp.battery_w < -lim
+        for key, cond, mins, why in (("deficit", deficit, float(s.get("stop_deficit_min") or 0), "Stopped: solar was below the house load"),
+                                     ("discharge", discharging, float(s.get("stop_discharge_min") or 0), f"Stopped: battery gave more than {lim:.0f} W")):
+            if on_solar and cond and mins > 0:
+                since = t.setdefault(key, now)
+                if (now - since).total_seconds() >= mins * 60:
+                    t.clear()
+                    t["until"], t["why"] = now + (now - since), why
+                    return f"{why} for {mins:.0f} min"
+            else:
+                t.pop(key, None)
+        return ""
+
     def solar_load(self) -> dict | None:
         """Describe this geyser as a switchable solar load for Hamlet Home's priority sharing."""
         if self.decision is None or not self.live:
@@ -629,6 +658,10 @@ class GeyserController:
             "start_w": float(self.settings["surplus_on_w"]),
             "keep_w": float(self.settings["surplus_off_w"]),
             "via_full": self.solar_via_full,
+            # Hamlet Home's timed stops, same as the pool pump
+            "stop_deficit_min": float(self.settings.get("stop_deficit_min", 10)),
+            "stop_discharge_min": float(self.settings.get("stop_discharge_min", 5)),
+            "discharge_w": float(self.settings.get("max_battery_discharge_w", 600)),
         }
 
     async def async_set_solar_grant(self, grant: bool | None, why: str = "", via_full: bool = False) -> None:

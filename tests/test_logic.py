@@ -208,3 +208,19 @@ def test_wants_solar():
     assert not logic.wants_solar(inp(temp=63), S)              # off and within hysteresis of 65
     assert logic.wants_solar(inp(temp=63, is_on=True), S)      # on: keep going to 65
     assert not logic.wants_solar(inp(temp=50, mode="off"), S)
+
+
+def test_solar_blocked_by_timed_stop():
+    """A timed stop (solar below house load / battery draining for X min) pauses solar heating."""
+    d = logic.decide(inp(solar_w=5000, load_w=1200, geyser_w=0, temp=50, solar_blocked="Stopped: solar was below the house load – may start again in 6 min"), S)
+    assert not d.on and "may start again" in d.reason
+
+
+def test_pool_style_settings_are_client_settings():
+    ok = logic.validate_settings({"surplus_on_w": 1000, "surplus_off_w": 500, "stop_deficit_min": 15, "stop_discharge_min": 10, "max_battery_discharge_w": 200}, admin=False)
+    assert ok["stop_deficit_min"] == 15 and ok["surplus_on_w"] == 1000
+    try:
+        logic.validate_settings({"stop_deficit_min": 999}, admin=False)
+        raise AssertionError
+    except ValueError:
+        pass

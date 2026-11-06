@@ -29,6 +29,8 @@ DEFAULT_SETTINGS: dict = {
     "soc_full_on": 95,  # battery practically full -> MPPT is throttling, use it
     "soc_full_off": 88,
     "max_battery_discharge_w": 600,  # tolerated battery draw while solar-heating
+    "stop_deficit_min": 10,  # solar heating stops when solar stays below the house load this long (0 = off)
+    "stop_discharge_min": 5,  # ... or the battery gives more than max_battery_discharge_w this long (0 = off)
     # Protection
     "min_soc": 35,  # never heat from the battery below this (auto/boost)
     "outage_min_soc": 70,  # schedules may only run on battery above this when grid is down
@@ -58,6 +60,12 @@ USER_KEYS = {
     "solar_enabled",
     "collector_priority",
     "schedules",
+    # solar heating – the same settings clients have on the pool pump
+    "surplus_on_w",
+    "surplus_off_w",
+    "max_battery_discharge_w",
+    "stop_deficit_min",
+    "stop_discharge_min",
 }
 
 
@@ -80,6 +88,7 @@ class Inputs:
     collector_heating: bool | None = None  # pump is moving solar heat into the tank right now
     solar_grant: bool | None = None  # set by Hamlet Home when spare solar is shared by priority
     solar_grant_why: str = ""
+    solar_blocked: str = ""  # timed stop: why solar heating is paused right now (standalone, without Hamlet Home)
 
 
 @dataclass
@@ -210,7 +219,7 @@ def decide(inp: Inputs, s: dict) -> Decision:
         # Hamlet Home shares spare solar between loads by priority
         if inp.solar_grant and temp_ok(s["solar_target_temp"]):
             return _finish(inp, s, Decision(True, "solar", "Solar", f"Heating on {inp.solar_grant_why or 'spare solar'}", s["solar_target_temp"], surplus))
-    elif s.get("solar_enabled", True) and surplus is not None:
+    elif s.get("solar_enabled", True) and surplus is not None and not inp.solar_blocked:
         want_solar = False
         why = ""
         if heating:
@@ -251,7 +260,9 @@ def decide(inp: Inputs, s: dict) -> Decision:
         when = f"next schedule {nxt:%H:%M}"
     else:
         when = f"next schedule {nxt:%a %H:%M}"
-    if has_temp:
+    if inp.solar_blocked:
+        reason = f"{inp.solar_blocked}, {when}"
+    elif has_temp:
         reason = f"Idle at {inp.temp:.0f}°C, {when}"
     else:
         reason = f"Idle, {when}"
@@ -297,6 +308,12 @@ def validate_settings(new: dict, admin: bool) -> dict:
     for key in ("target_temp", "solar_target_temp", "boost_temp"):
         if key in cleaned and not 30 <= cleaned[key] <= 75:
             raise ValueError(f"{key} must be 30–75 °C")
+    for key in ("stop_deficit_min", "stop_discharge_min"):
+        if key in cleaned and not 0 <= cleaned[key] <= 240:
+            raise ValueError("Stop times must be 0–240 min")
+    for key in ("surplus_on_w", "surplus_off_w", "max_battery_discharge_w"):
+        if key in cleaned and not 0 <= cleaned[key] <= 30000:
+            raise ValueError("Watts must be 0–30 000 W")
     if merged_max is not None and not 40 <= merged_max <= 80:
         raise ValueError("max_temp must be 40–80 °C")
     return cleaned

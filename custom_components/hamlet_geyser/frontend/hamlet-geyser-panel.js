@@ -187,6 +187,9 @@ h2 .sub { margin-left: auto; font-size: 13px; font-weight: 400; color: var(--mut
 .sched { display: grid; grid-template-columns: auto 1fr; gap: 10px 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .sched:last-of-type { border-bottom: 0; }
 .sched .times { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.sched .times [data-del] { margin-left: auto; }
+.field .ctl input[type=number] { width: 84px; }
+.pair { display: flex; align-items: center; gap: 6px; }
 .days { display: flex; gap: 4px; flex-wrap: wrap; grid-column: 2; }
 .days button { font: inherit; font-size: 12px; width: 34px; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; }
 .days button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent); border-color: var(--accent); color: var(--primary-text-color); }
@@ -432,9 +435,9 @@ class HamletGeyserPanel extends HTMLElement {
         <div class="chartwrap" id="chart"></div>
         <div class="totals" id="totals"></div>
       </section>
-      <section class="card"><h2>Heating times</h2><div id="scheds"></div>
-        <div class="actions"><button class="btn" id="addsched">+ Add time</button></div></section>
-      <section class="card"><h2>Smart heating</h2><div id="smart" class="form"></div></section>
+      <section class="card span2"><h2><ha-icon icon="mdi:white-balance-sunny"></ha-icon>Solar heating <span class="sub" id="smartsub"></span></h2><div id="smart" class="form"></div></section>
+      <section class="card span2"><h2><ha-icon icon="mdi:clock-outline"></ha-icon>Heating times <span class="sub">heats inside these times</span></h2><div id="scheds"></div>
+        <div class="actions" style="justify-content:flex-start"><button class="btn" id="addsched">+ Add heating time</button></div></section>
       <section class="card span2" id="installer" hidden><h2>Installer settings <span class="sub">admin only</span></h2><div id="inst"></div></section>
       <div class="span2 actions" id="savebar" hidden>
         <span class="msg" id="savemsg"></span>
@@ -905,18 +908,30 @@ class HamletGeyserPanel extends HTMLElement {
     });
   }
 
+  // the same rows clients know from the pool pump: start / keep running / hours / timed stops
   _renderSmart() {
     const el = this.shadowRoot.getElementById("smart"); if (!el || !this._draft) return;
-    const t = this._snap.features.temp;
+    const t = this._snap.features.temp, b = this._snap.features.battery || this._snap.features.battery_power;
+    const on = !!this._draft.solar_enabled;
+    const sub = this.shadowRoot.getElementById("smartsub");
+    if (sub) sub.textContent = on ? "uses spare solar first" : "off";
     el.innerHTML = [
       this._field("solar_enabled", "Heat with spare solar", "Uses free solar when the house doesn't need it, or when the battery is full", "", { bool: true }),
-      t ? this._field("solar_target_temp", "Solar heats up to", "Store extra heat when the energy is free", "°C", { min: 30, max: 75 }) : "",
+      on ? this._field("surplus_on_w", "Start when spare solar is above", "not counting the geyser itself", "W", { min: 0, max: 30000, step: 50 }) : "",
+      on ? this._field("surplus_off_w", "Keep running while above", "", "W", { min: 0, max: 30000, step: 50 }) : "",
+      on && t ? this._field("solar_target_temp", "Solar heats up to", "store extra heat when the energy is free", "°C", { min: 30, max: 75 }) : "",
+      on ? this._field("stop_deficit_min", "Stop when solar is below the house load for", "the house is then running on battery or grid · 0 = off", "min", { min: 0, max: 240 }) : "",
+      on && b ? `<div class="field"><label>Stop when the battery gives more than<span class="hint">ignores small blips below this · 0 min = off</span></label>
+        <span class="ctl pair"><input id="f-max_battery_discharge_w" type="number" data-f="max_battery_discharge_w" value="${this._draft.max_battery_discharge_w}" min="0" max="30000" step="50" aria-label="Battery limit in watts">W for
+        <input id="f-stop_discharge_min" type="number" data-f="stop_discharge_min" value="${this._draft.stop_discharge_min}" min="0" max="240" step="1" aria-label="Minutes">min</span></div>` : "",
       this._snap.features.collector && this._snap.features.collector !== "none"
         ? this._field("collector_priority", "Let the solar collector heat first", "During heating times the element waits while the collector is hot enough to reach the target", "", { bool: true }) : "",
       this._field("boost_minutes", "Boost length", "", "min", { min: 5, max: 480, step: 5 }),
       t ? this._field("boost_temp", "Boost heats up to", "", "°C", { min: 30, max: 75 }) : "",
+      on ? `<div class="muted small" style="padding-top:10px">With Hamlet Home, spare solar is shared with the pool pump and other devices by the order under Energy → Solar priority.</div>` : "",
     ].join("");
     this._bindFields(el);
+    el.querySelector('[data-f="solar_enabled"]')?.addEventListener("change", () => this._renderSmart());
   }
 
   _renderInstaller() {
@@ -927,11 +942,8 @@ class HamletGeyserPanel extends HTMLElement {
     const el = this.shadowRoot.getElementById("inst");
     el.innerHTML = `<div class="cols2"><div class="form">
         ${this._field("geyser_rated_w", "Element rating", "Used to estimate power if there's no meter", "W", { min: 500, max: 6000, step: 50 })}
-        ${this._field("surplus_on_w", "Start on spare solar above", "", "W", { min: 0, max: 10000, step: 50 })}
-        ${this._field("surplus_off_w", "Keep going while spare solar above", "", "W", { min: 0, max: 10000, step: 50 })}
         ${b ? this._field("soc_full_on", "Battery full: start at", "Victron/Sunsynk throttle solar when full", "%", { min: 50, max: 100 }) : ""}
         ${b ? this._field("soc_full_off", "Battery full: stop below", "", "%", { min: 40, max: 100 }) : ""}
-        ${b ? this._field("max_battery_discharge_w", "Allowed battery draw while solar heating", "", "W", { min: 0, max: 5000, step: 50 }) : ""}
       </div><div class="form">
         ${b ? this._field("min_soc", "Never heat from battery below", "Auto and Boost", "%", { min: 0, max: 100 }) : ""}
         ${b ? this._field("outage_min_soc", "Grid down: schedules need battery above", "", "%", { min: 0, max: 100 }) : ""}
