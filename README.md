@@ -112,3 +112,8 @@ The card shows the temperature gauge, status and reason, Auto / Boost / On / Off
 pip install pytest-homeassistant-custom-component
 pytest
 ```
+
+## Geyserwala / Geyserwise set temperature
+
+The controller never heats above its **own** set temperature (e.g. the Geyserwala's *Temperature Setpoint*), whatever Hamlet Geyser asks. Hamlet Geyser finds that number on the same device as the geyser switch (or pick it under Configure → *Controller set temperature*), shows it on the Geyser page, and when the water is already near it says so (*Hot enough* / *Controller set lower*) instead of *Not responding* – with a button to raise it to the app's target.
+

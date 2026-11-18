@@ -18,6 +18,7 @@ from . import logic
 from .const import (
     CONF_ELEMENT_STATUS,
     CONF_CONTROLLER_MODE,
+    CONF_CONTROLLER_SETPOINT,
     CONF_BATTERY_INVERT,
     CONF_BATTERY_POWER,
     CONF_BATTERY_SOC,
@@ -76,6 +77,7 @@ class GeyserController:
         self._unsubs: list[CALLBACK_TYPE] = []
         self._listeners: list[Callable[[], None]] = []
         self._last_command: datetime | None = None
+        self._sp_guess: str | None = None    # the controller's own set temperature entity, found once ("" = none)
         # the switch not following our command (e.g. a controller that turns its own boost switch back off)
         self._want: bool | None = None
         self._want_since: datetime | None = None
@@ -124,6 +126,40 @@ class GeyserController:
             return None, []
         opts = [str(o) for o in (st.attributes.get("options") or [])]
         return (None if st.state in BAD_STATES else st.state), opts
+
+    def controller_setpoint_entity(self) -> str | None:
+        """The controller's own set temperature: as set up, or a number on the same device as the switch
+        whose name says set point / target temperature (Geyserwala 'Temperature Setpoint', Geyserwise 'Set Temp')."""
+        eid = self.conf.get(CONF_CONTROLLER_SETPOINT)
+        if eid:
+            return eid
+        if self._sp_guess is not None:
+            return self._sp_guess or None
+        from homeassistant.helpers import entity_registry as er  # noqa: PLC0415
+        reg = er.async_get(self.hass)
+        sw = reg.async_get(self.conf.get(CONF_GEYSER_SWITCH) or "")
+        found = ""
+        if sw and sw.device_id:
+            for e in er.async_entries_for_device(reg, sw.device_id):
+                text = f"{e.entity_id} {e.original_name or ''} {e.name or ''}".lower()
+                if e.domain == "number" and ("setpoint" in text or "set point" in text or "set_temp" in text or "set temp" in text or "target" in text):
+                    found = e.entity_id
+                    break
+        self._sp_guess = found
+        return found or None
+
+    def controller_setpoint(self) -> float | None:
+        return self._float(self.controller_setpoint_entity())
+
+    async def async_set_controller_setpoint(self, value: float) -> None:
+        eid = self.controller_setpoint_entity()
+        if not eid:
+            raise ValueError("The controller's own set temperature isn't known – pick it under Configure")
+        st = self.hass.states.get(eid)
+        lo, hi = float(st.attributes.get("min", 30)) if st else 30, float(st.attributes.get("max", 80)) if st else 80
+        value = max(lo, min(hi, float(value)))
+        domain = eid.split(".", 1)[0]
+        await self.hass.services.async_call(domain, "set_value", {"entity_id": eid, "value": value}, blocking=True)
 
     async def async_set_controller_mode(self, option: str) -> None:
         eid = self.conf.get(CONF_CONTROLLER_MODE)
@@ -427,12 +463,23 @@ class GeyserController:
                 stuck = (inp.now - self._want_since).total_seconds() if self._want_since else 0
                 if self._cmd_error or stuck >= 60:
                     word = "on" if self._want else "off"
-                    why = (f"Home Assistant could not switch {switch_id}: {self._cmd_error}." if self._cmd_error else
-                           f"Asked {switch_id} to switch {word}, but it stays {'off' if self._want else 'on'}. "
-                           + (f"The controller is in {cmode} mode, which may block it – change its mode below or in its own app. " if (cmode := self.controller_mode()[0]) else
-                              "Something else is overriding it – check the controller's own app/settings (mode, holiday, timers or its own set temperature). ")
-                           + "Also check the switch can be switched by hand in Home Assistant.")
-                    self.decision = dataclasses.replace(self.decision, on=self._want, status="Not responding", reason=f"{self.decision.reason}. {why}")
+                    sp = self.controller_setpoint()
+                    target = getattr(self.decision, "target", None)
+                    if not self._cmd_error and self._want and sp is not None and inp.temp is not None and inp.temp >= sp - 6:
+                        # the usual case: a Geyserwala / Geyserwise only heats up to its OWN set temperature
+                        higher = bool(target and target > sp)
+                        why = (f"The geyser controller only heats up to its own set temperature of {sp:.0f}°C, and the water is already {inp.temp:.0f}°C"
+                               + (f" – so it won't heat to {target:.0f}°C. Raise the controller's set temperature to {target:.0f}°C (button below) or lower the target here."
+                                  if higher else " – it is hot enough, nothing is wrong."))
+                        status = "Controller set lower" if higher else "Hot enough"
+                    else:
+                        why = (f"Home Assistant could not switch {switch_id}: {self._cmd_error}." if self._cmd_error else
+                               f"Asked {switch_id} to switch {word}, but it stays {'off' if self._want else 'on'}. "
+                               + (f"The controller is in {cmode} mode, which may block it – change its mode below or in its own app. " if (cmode := self.controller_mode()[0]) else
+                                  "Something else is overriding it – check the controller's own app/settings (mode, holiday, timers or its own set temperature). ")
+                               + "Also check the switch can be switched by hand in Home Assistant.")
+                        status = "Not responding"
+                    self.decision = dataclasses.replace(self.decision, on=self._want, status=status, reason=f"{self.decision.reason}. {why}")
 
         self.live = {
             "temp": inp.temp,
@@ -446,6 +493,7 @@ class GeyserController:
             "grid_status_raw": self._raw_state(self.conf.get(CONF_GRID_STATUS)),
             "is_on": inp.is_on,
             "controller_mode": self.controller_mode()[0],
+            "controller_setpoint": self.controller_setpoint(), "controller_setpoint_entity": self.controller_setpoint_entity(),
             "controller_modes": self.controller_mode()[1],
             "surplus_w": self.decision.surplus_w,
             **self.live_pump,

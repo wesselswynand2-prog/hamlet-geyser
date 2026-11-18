@@ -10,7 +10,8 @@
           "geyser_power": "Geyser power (W)",
           "geyser_temp": "Geyser water temperature",
           "element_status": "Element heating status (optional) – e.g. the Geyserwise \"Element\" on/off",
-          "controller_mode": "Controller mode (optional) – e.g. the Geyserwise / Geyserwala \"Mode\" (Timer, Holiday, On, Off …)"
+          "controller_mode": "Controller mode (optional) – e.g. the Geyserwise / Geyserwala \"Mode\" (Timer, Holiday, On, Off …)",
+          "controller_setpoint": "Controller set temperature (optional – found by itself) – the Geyserwise / Geyserwala's own \"Temperature Setpoint\""
         }
       },
       "energy": {
@@ -64,7 +65,8 @@
           "geyser_power": "Geyser power (W)",
           "geyser_temp": "Geyser water temperature",
           "element_status": "Element heating status (optional) – e.g. the Geyserwise \"Element\" on/off",
-          "controller_mode": "Controller mode (optional) – e.g. the Geyserwise / Geyserwala \"Mode\" (Timer, Holiday, On, Off …)"
+          "controller_mode": "Controller mode (optional) – e.g. the Geyserwise / Geyserwala \"Mode\" (Timer, Holiday, On, Off …)",
+          "controller_setpoint": "Controller set temperature (optional – found by itself) – the Geyserwise / Geyserwala's own \"Temperature Setpoint\""
         }
       },
       "energy": {

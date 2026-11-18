@@ -23,6 +23,7 @@ from .const import (
     CONF_GEYSER_POWER,
     CONF_ELEMENT_STATUS,
     CONF_CONTROLLER_MODE,
+    CONF_CONTROLLER_SETPOINT,
     CONF_GEYSER_SWITCH,
     CONF_GEYSER_TEMP,
     CONF_GRID_INVERT,
@@ -62,6 +63,9 @@ def _geyser_schema() -> vol.Schema:
         ),
         vol.Optional(CONF_CONTROLLER_MODE): selector.EntitySelector(
             selector.EntitySelectorConfig(domain=["select", "input_select"])
+        ),
+        vol.Optional(CONF_CONTROLLER_SETPOINT): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["number", "input_number"])
         ),
     })
 
@@ -176,7 +180,7 @@ class HamletGeyserOptionsFlow(OptionsFlow):
 
     async def async_step_init(self, user_input: dict | None = None) -> ConfigFlowResult:
         if user_input is not None:
-            self._data.update({k: None for k in (CONF_GEYSER_POWER, CONF_GEYSER_TEMP, CONF_ELEMENT_STATUS, CONF_CONTROLLER_MODE)})
+            self._data.update({k: None for k in (CONF_GEYSER_POWER, CONF_GEYSER_TEMP, CONF_ELEMENT_STATUS, CONF_CONTROLLER_MODE, CONF_CONTROLLER_SETPOINT)})
             self._data.update(user_input)
             return await self.async_step_energy()
         schema = self.add_suggested_values_to_schema(_geyser_schema(), self._current)

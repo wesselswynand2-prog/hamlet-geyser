@@ -459,6 +459,7 @@ class HamletGeyserPanel extends HTMLElement {
       const m = ev.target.closest("[data-mode]"); if (m) return this._setMode(m.dataset.mode);
       const b = ev.target.closest("[data-boost]"); if (b) return this._setMode("boost", Number(b.dataset.boost));
       const c = ev.target.closest("[data-cmode]"); if (c && c.getAttribute("aria-pressed") !== "true") return this._setCtrlMode(c.dataset.cmode);
+      const csp = ev.target.closest("[data-csp]"); if (csp) return this._setCtrlSetpoint(csp.dataset.csp);
     });
     root.getElementById("coll").addEventListener("click", async (ev) => {
       const b = ev.target.closest("[data-pump]"); if (!b) return;
@@ -477,7 +478,7 @@ class HamletGeyserPanel extends HTMLElement {
   /* ---------------------------------------------------------------- hero */
   _statusColor(d) {
     if (!d) return "var(--muted)";
-    if (d.status === "Blocked" || d.status === "Offline" || d.status === "Not responding") return "var(--c-warn)";
+    if (d.status === "Blocked" || d.status === "Offline" || d.status === "Not responding" || d.status === "Controller set lower") return "var(--c-warn)";
     if (d.status === "Hot") return "var(--c-bad)";
     if (d.source === "solar" || d.source === "collector") return "var(--c-solar)";
     if (d.source === "boost") return "var(--c-geyser)";
@@ -557,8 +558,25 @@ class HamletGeyserPanel extends HTMLElement {
       </div>
       ${s.mode === "boost" ? `<div class="boostbar">${[30, 60, 120].map((m) => `<button class="chip" data-boost="${m}">${m < 60 ? m + " min" : m / 60 + " h"}</button>`).join("")}</div>` : ""}
       ${s.mode === "on" ? `<div class="muted small">Stays on until you switch back to Auto${s.features.temp ? ` (safety limit ${s.settings.max_temp}°C)` : ""}.</div>` : ""}
+      ${this._ctrlSetpointHtml(s)}
       ${this._ctrlModeHtml(s.live || {})}
     `);
+  }
+
+  // the Geyserwise / Geyserwala's own set temperature: it never heats above it, whatever this app asks
+  _ctrlSetpointHtml(s) {
+    const L = s.live || {}, sp = L.controller_setpoint, d = s.decision || {};
+    if (sp === null || sp === undefined) return "";
+    const want = d.target && d.target > sp ? Math.round(d.target) : null;
+    return `<div class="small" style="margin:12px 0 0;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <span>Geyserwise set temperature <b>${Math.round(sp)}°C</b><span class="muted"> – it never heats above this</span></span>
+        ${want ? `<button class="chip" data-csp="${want}">Set it to ${want}°C</button>` : ""}</div>`;
+  }
+
+  async _setCtrlSetpoint(v) {
+    if (!confirm(`Set the Geyserwise's own set temperature to ${v}°C?`)) return;
+    try { this._apply(await this._hass.callWS({ type: `${DOMAIN}/set_controller_setpoint`, entry_id: this._entryId, value: Number(v) })); }
+    catch (e) { alert(e.message); }
   }
 
   // the Geyserwise / Geyserwala's own mode (Timer, Holiday, On, Off …), shown and changeable here

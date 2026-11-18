@@ -1,6 +1,6 @@
 """Constants for Hamlet Geyser."""
 DOMAIN = "hamlet_geyser"
-VERSION = "1.4.8"
+VERSION = "1.4.9"
 
 PANEL_URL_PATH = "hamlet-geyser"
 PANEL_COMPONENT = "hamlet-geyser-panel"
@@ -12,6 +12,7 @@ CONF_GEYSER_SWITCH = "geyser_switch"
 CONF_GEYSER_POWER = "geyser_power"
 CONF_GEYSER_TEMP = "geyser_temp"
 CONF_CONTROLLER_MODE = "controller_mode"   # Geyserwise / Geyserwala mode select: Timer, Holiday, On, Off … (optional)
+CONF_CONTROLLER_SETPOINT = "controller_setpoint"   # the Geyserwise / Geyserwala's own set temperature (number, optional – found by itself)
 CONF_ELEMENT_STATUS = "element_status"   # Geyserwise "element on" indicator (optional)
 CONF_SOLAR_POWER = "solar_power"
 CONF_LOAD_POWER = "load_power"

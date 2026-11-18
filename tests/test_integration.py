@@ -364,3 +364,27 @@ async def test_controller_mode(hass: HomeAssistant, hass_ws_client):
     assert picks[-1].data == {"entity_id": "select.geyserwala_mode", "option": "HOLIDAY"}
     await ws.send_json({"id": 2, "type": f"{DOMAIN}/set_controller_mode", "entry_id": entry.entry_id, "option": "PARTY"})
     assert not (await ws.receive_json())["success"]
+
+
+async def test_controller_own_set_temperature(hass: HomeAssistant, hass_ws_client):
+    """A Geyserwala that won't heat past its own set temperature: say that (not 'not responding') and offer to raise it."""
+    from datetime import timedelta
+    async_mock_service(hass, "homeassistant", "turn_on")          # the boost switch never turns on
+    async_mock_service(hass, "homeassistant", "turn_off")
+    hass.states.async_set("number.geyserwala_setpoint", "65", {"min": 30, "max": 75, "unit_of_measurement": "°C"})
+    entry = await _setup(hass)
+    hass.config_entries.async_update_entry(entry, options={**entry.data, **entry.options, "controller_setpoint": "number.geyserwala_setpoint"})
+    await hass.async_block_till_done()
+    ctl = hass.data[DOMAIN][entry.entry_id]
+    sets = async_mock_service(hass, "number", "set_value")
+    hass.states.async_set("sensor.geyser_temp", "64", {"unit_of_measurement": "°C"})
+    await ctl.async_set_mode("on")
+    await ctl.async_evaluate()
+    assert ctl.decision.on and ctl.live["controller_setpoint"] == 65
+    ctl._want_since = ctl._last_try = ctl._want_since - timedelta(seconds=90)
+    await ctl.async_evaluate()
+    assert ctl.decision.status == "Controller set lower" and "own set temperature of 65°C" in ctl.decision.reason
+    ws = await hass_ws_client(hass)
+    await ws.send_json({"id": 1, "type": f"{DOMAIN}/set_controller_setpoint", "entry_id": entry.entry_id, "value": 90})
+    assert (await ws.receive_json())["success"]
+    assert sets[-1].data == {"entity_id": "number.geyserwala_setpoint", "value": 75.0}       # kept inside its own limits
