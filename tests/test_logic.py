@@ -224,3 +224,14 @@ def test_pool_style_settings_are_client_settings():
         raise AssertionError
     except ValueError:
         pass
+
+
+def test_solar_waits_for_battery_percentage():
+    s = {**logic.DEFAULT_SETTINGS, "solar_min_soc": 80, "schedules": []}
+    base = dict(now=WED_NOON, mode="auto", temp=50, solar_w=5000, load_w=800, battery_soc=70, battery_w=0, grid_available=True, is_on=False)
+    d = logic.decide(logic.Inputs(**base), s)
+    assert not d.on and "Solar waits until the battery is 80% (now 70%)" in d.reason
+    assert logic.decide(logic.Inputs(**{**base, "battery_soc": 85}), s).on                      # battery full enough: solar heats
+    assert logic.decide(logic.Inputs(**{**base, "battery_soc": 78, "is_on": True}), s).on        # 3 % leeway once heating
+    assert not logic.decide(logic.Inputs(**{**base, "battery_soc": 76, "is_on": True}), s).on
+    assert logic.decide(logic.Inputs(**base), {**s, "solar_min_soc": 0}).on                     # 0 = any battery level

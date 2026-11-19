@@ -935,6 +935,7 @@ class HamletGeyserPanel extends HTMLElement {
     if (sub) sub.textContent = on ? "uses spare solar first" : "off";
     el.innerHTML = [
       this._field("solar_enabled", "Heat with spare solar", "Uses free solar when the house doesn't need it, or when the battery is full", "", { bool: true }),
+      on && this._snap.features.battery ? this._field("solar_min_soc", "Only when the battery is at least", "the battery charges first, then the geyser · 0 = any", "%", { min: 0, max: 100, step: 5 }) : "",
       on ? this._field("surplus_on_w", "Start when spare solar is above", "not counting the geyser itself", "W", { min: 0, max: 30000, step: 50 }) : "",
       on ? this._field("surplus_off_w", "Keep running while above", "", "W", { min: 0, max: 30000, step: 50 }) : "",
       on && t ? this._field("solar_target_temp", "Solar heats up to", "store extra heat when the energy is free", "°C", { min: 30, max: 75 }) : "",

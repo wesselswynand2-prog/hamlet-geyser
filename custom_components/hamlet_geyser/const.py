@@ -1,6 +1,6 @@
 """Constants for Hamlet Geyser."""
 DOMAIN = "hamlet_geyser"
-VERSION = "1.4.9"
+VERSION = "1.4.10"
 
 PANEL_URL_PATH = "hamlet-geyser"
 PANEL_COMPONENT = "hamlet-geyser-panel"

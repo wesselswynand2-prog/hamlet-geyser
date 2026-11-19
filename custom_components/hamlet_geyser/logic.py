@@ -33,6 +33,7 @@ DEFAULT_SETTINGS: dict = {
     "stop_discharge_min": 5,  # ... or the battery gives more than max_battery_discharge_w this long (0 = off)
     # Protection
     "min_soc": 35,  # never heat from the battery below this (auto/boost)
+    "solar_min_soc": 0,  # solar heating only once the battery is at least this full (0 = any) – the battery charges first
     "outage_min_soc": 70,  # schedules may only run on battery above this when grid is down
     "schedules_need_grid": False,  # stricter: schedules only when grid is up
     "min_switch_seconds": 120,
@@ -58,6 +59,7 @@ USER_KEYS = {
     "boost_temp",
     "boost_minutes",
     "solar_enabled",
+    "solar_min_soc",
     "collector_priority",
     "schedules",
     # solar heating – the same settings clients have on the pool pump
@@ -214,12 +216,16 @@ def decide(inp: Inputs, s: dict) -> Decision:
         return _finish(inp, s, Decision(True, "boost", "Boost", f"Boost heating, {mins} min left", target, surplus), force=True)
 
     # ---- auto -------------------------------------------------------------
-    # 1. free solar first
-    if s.get("solar_enabled", True) and inp.solar_grant is not None:
+    # 1. free solar first – once the battery is full enough (3 % hysteresis while heating)
+    sol_soc = float(s.get("solar_min_soc") or 0)
+    solar_wait = None
+    if s.get("solar_enabled", True) and sol_soc > 0 and soc is not None and soc < sol_soc - (3 if heating else 0):
+        solar_wait = f"Solar waits until the battery is {sol_soc:.0f}% (now {soc:.0f}%)"
+    if not solar_wait and s.get("solar_enabled", True) and inp.solar_grant is not None:
         # Hamlet Home shares spare solar between loads by priority
         if inp.solar_grant and temp_ok(s["solar_target_temp"]):
             return _finish(inp, s, Decision(True, "solar", "Solar", f"Heating on {inp.solar_grant_why or 'spare solar'}", s["solar_target_temp"], surplus))
-    elif s.get("solar_enabled", True) and surplus is not None and not inp.solar_blocked:
+    elif not solar_wait and s.get("solar_enabled", True) and surplus is not None and not inp.solar_blocked:
         want_solar = False
         why = ""
         if heating:
@@ -260,7 +266,9 @@ def decide(inp: Inputs, s: dict) -> Decision:
         when = f"next schedule {nxt:%H:%M}"
     else:
         when = f"next schedule {nxt:%a %H:%M}"
-    if inp.solar_blocked:
+    if solar_wait:
+        reason = f"{solar_wait}, {when}"
+    elif inp.solar_blocked:
         reason = f"{inp.solar_blocked}, {when}"
     elif has_temp:
         reason = f"Idle at {inp.temp:.0f}°C, {when}"
@@ -308,6 +316,8 @@ def validate_settings(new: dict, admin: bool) -> dict:
     for key in ("target_temp", "solar_target_temp", "boost_temp"):
         if key in cleaned and not 30 <= cleaned[key] <= 75:
             raise ValueError(f"{key} must be 30–75 °C")
+    if "solar_min_soc" in cleaned and not 0 <= cleaned["solar_min_soc"] <= 100:
+        raise ValueError("Battery % for solar heating must be 0–100 %")
     for key in ("stop_deficit_min", "stop_discharge_min"):
         if key in cleaned and not 0 <= cleaned[key] <= 240:
             raise ValueError("Stop times must be 0–240 min")
